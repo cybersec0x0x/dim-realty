@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dim Realty — Вхід</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body class="auth-page">
+<div class="auth-container">
+  <div class="auth-logo">
+    <svg viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect width="56" height="56" rx="14" fill="#0D2137"/>
+      <rect x="1" y="1" width="54" height="54" rx="13" stroke="#C8A951" stroke-width="1.5" fill="none" opacity="0.45"/>
+      <!-- Chimney -->
+      <rect x="36" y="9" width="6" height="15" rx="1" fill="#C8A951"/>
+      <!-- Roof fill -->
+      <path d="M28 8L5 25L51 25Z" fill="#C8A951" fill-opacity="0.12"/>
+      <!-- Roof outline -->
+      <polyline points="5,25 28,8 51,25" stroke="#C8A951" stroke-width="2.5" stroke-linejoin="round" fill="none"/>
+      <!-- Body outline -->
+      <rect x="7" y="25" width="42" height="21" fill="none" stroke="#C8A951" stroke-width="2"/>
+      <!-- Left window with cross -->
+      <rect x="10" y="27" width="11" height="9" rx="1" fill="none" stroke="#C8A951" stroke-width="1.5"/>
+      <line x1="15.5" y1="27" x2="15.5" y2="36" stroke="#C8A951" stroke-width="1" opacity="0.6"/>
+      <line x1="10" y1="31.5" x2="21" y2="31.5" stroke="#C8A951" stroke-width="1" opacity="0.6"/>
+      <!-- Right window with cross -->
+      <rect x="35" y="27" width="11" height="9" rx="1" fill="none" stroke="#C8A951" stroke-width="1.5"/>
+      <line x1="40.5" y1="27" x2="40.5" y2="36" stroke="#C8A951" stroke-width="1" opacity="0.6"/>
+      <line x1="35" y1="31.5" x2="46" y2="31.5" stroke="#C8A951" stroke-width="1" opacity="0.6"/>
+      <!-- Door -->
+      <rect x="21" y="33" width="14" height="13" rx="2" fill="#C8A951"/>
+      <!-- Door knob -->
+      <circle cx="32" cy="40" r="1.2" fill="#0D2137"/>
+    </svg>
+    <div class="brand"><span>DIM</span> REALTY</div>
+    <div class="tagline">Система управління нерухомістю</div>
+  </div>
+
+  <div class="auth-card">
+    <div class="auth-tabs">
+      <button class="auth-tab active" onclick="switchTab('login')">Вхід</button>
+      <button class="auth-tab" onclick="switchTab('register')">Реєстрація</button>
+    </div>
+
+    <!-- Login -->
+    <form class="auth-form active" id="login-form" onsubmit="doLogin(event)">
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <div class="input-wrap">
+          <i class="fas fa-envelope"></i>
+          <input type="email" name="email" placeholder="admin@dimrealty.ua" required autocomplete="username">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Пароль</label>
+        <div class="input-wrap">
+          <i class="fas fa-lock"></i>
+          <input type="password" name="password" placeholder="Введіть пароль" required autocomplete="current-password">
+        </div>
+      </div>
+      <div id="login-error" style="color:var(--danger);font-size:13px;margin-bottom:12px;display:none"></div>
+      <button type="submit" class="btn btn-primary btn-full" id="login-btn">
+        <i class="fas fa-sign-in-alt"></i> Увійти
+      </button>
+    </form>
+
+    <!-- Register -->
+    <form class="auth-form" id="register-form" onsubmit="doRegister(event)">
+      <div class="form-group">
+        <label class="form-label">Повне ім'я</label>
+        <div class="input-wrap">
+          <i class="fas fa-user"></i>
+          <input type="text" name="name" placeholder="Іван Іваненко" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Email</label>
+        <div class="input-wrap">
+          <i class="fas fa-envelope"></i>
+          <input type="email" name="email" placeholder="email@dimrealty.ua" required>
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Телефон</label>
+        <div class="input-wrap">
+          <i class="fas fa-phone"></i>
+          <input type="tel" name="phone" placeholder="+380 XX XXX XXXX">
+        </div>
+      </div>
+      <div class="form-group">
+        <label class="form-label">Пароль</label>
+        <div class="input-wrap">
+          <i class="fas fa-lock"></i>
+          <input type="password" name="password" placeholder="Мінімум 6 символів" minlength="6" required>
+        </div>
+      </div>
+      <div id="reg-error" style="color:var(--danger);font-size:13px;margin-bottom:12px;display:none"></div>
+      <button type="submit" class="btn btn-primary btn-full" id="reg-btn">
+        <i class="fas fa-user-plus"></i> Зареєструватись
+      </button>
+    </form>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script>
+  if (localStorage.getItem('dr_token')) location.href = '/dashboard.html';
+
+  function switchTab(tab) {
+    document.querySelectorAll('.auth-tab').forEach((t,i) => t.classList.toggle('active', (i===0 && tab==='login') || (i===1 && tab==='register')));
+    document.querySelectorAll('.auth-form').forEach((f,i) => f.classList.toggle('active', (i===0 && tab==='login') || (i===1 && tab==='register')));
+  }
+
+  async function doLogin(e) {
+    e.preventDefault();
+    const btn = document.getElementById('login-btn');
+    const err = document.getElementById('login-error');
+    const fd = new FormData(e.target);
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Вхід...';
+    err.style.display = 'none';
+    try {
+      const data = await api.post('/auth/login', { email: fd.get('email'), password: fd.get('password') });
+      localStorage.setItem('dr_token', data.token);
+      localStorage.setItem('dr_user', JSON.stringify(data.user));
+      location.href = '/dashboard.html';
+    } catch(ex) {
+      err.textContent = ex.message; err.style.display = 'block';
+      btn.disabled = false; btn.innerHTML = '<i class="fas fa-sign-in-alt"></i> Увійти';
+    }
+  }
+
+  async function doRegister(e) {
+    e.preventDefault();
+    const btn = document.getElementById('reg-btn');
+    const err = document.getElementById('reg-error');
+    const fd = new FormData(e.target);
+    btn.disabled = true; btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Реєстрація...';
+    err.style.display = 'none';
+    try {
+      const data = await api.post('/auth/register', { name: fd.get('name'), email: fd.get('email'), password: fd.get('password'), phone: fd.get('phone') });
+      localStorage.setItem('dr_token', data.token);
+      localStorage.setItem('dr_user', JSON.stringify(data.user));
+      location.href = '/dashboard.html';
+    } catch(ex) {
+      err.textContent = ex.message; err.style.display = 'block';
+      btn.disabled = false; btn.innerHTML = '<i class="fas fa-user-plus"></i> Зареєструватись';
+    }
+  }
+</script>
+</body>
+</html>

@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dim Realty — Об'єкт</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 40 40" fill="none"><rect width="40" height="40" rx="8" fill="#0D2137"/><rect x="1" y="1" width="38" height="38" rx="7" stroke="#C8A951" stroke-width="1" fill="none" opacity="0.35"/><rect x="26" y="6" width="5" height="11" rx="0.5" fill="#C8A951"/><path d="M20 5L1 19L39 19Z" fill="#C8A951" fill-opacity="0.12"/><polyline points="1,19 20,5 39,19" stroke="#C8A951" stroke-width="2" stroke-linejoin="round" fill="none"/><rect x="3" y="19" width="34" height="16" fill="none" stroke="#C8A951" stroke-width="1.5"/><rect x="5" y="21" width="8" height="5" rx="0.5" fill="none" stroke="#C8A951" stroke-width="1.2"/><line x1="9" y1="21" x2="9" y2="26" stroke="#C8A951" stroke-width="0.8" opacity="0.6"/><line x1="5" y1="23.5" x2="13" y2="23.5" stroke="#C8A951" stroke-width="0.8" opacity="0.6"/><rect x="27" y="21" width="8" height="5" rx="0.5" fill="none" stroke="#C8A951" stroke-width="1.2"/><line x1="31" y1="21" x2="31" y2="26" stroke="#C8A951" stroke-width="0.8" opacity="0.6"/><line x1="27" y1="23.5" x2="35" y2="23.5" stroke="#C8A951" stroke-width="0.8" opacity="0.6"/><rect x="15" y="26" width="10" height="9" rx="1" fill="#C8A951"/><circle cx="23" cy="31" r="0.9" fill="#0D2137"/></svg>
+      <div class="brand-text"><div class="name"><span>DIM</span> REALTY</div><div class="sub">Admin Panel</div></div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Головне</div>
+      <a href="dashboard.html" class="nav-item" data-page="dashboard"><i class="fas fa-chart-pie"></i> Дашборд</a>
+      <div class="nav-section-label">Нерухомість</div>
+      <a href="properties.html?type=apartment" class="nav-item" data-page="apartments"><i class="fas fa-building"></i> Квартири</a>
+      <a href="properties.html?type=house" class="nav-item" data-page="houses"><i class="fas fa-home"></i> Будинки</a>
+      <a href="properties.html?type=land" class="nav-item" data-page="land"><i class="fas fa-tree"></i> Ділянки</a>
+      <a href="properties.html" class="nav-item active" data-page="properties"><i class="fas fa-list"></i> Всі об'єкти</a>
+      <div class="nav-section-label admin-only">Адміністрування</div>
+      <a href="employees.html" class="nav-item admin-only" data-page="employees"><i class="fas fa-users"></i> Співробітники</a>
+    </nav>
+    <div class="sidebar-user">
+      <div class="user-avatar-sm" id="sidebar-avatar"></div>
+      <div class="sidebar-user-info">
+        <div class="uname" id="sidebar-user-name">Завантаження...</div>
+        <div class="urole" id="sidebar-user-role"></div>
+      </div>
+      <button class="sidebar-logout" onclick="logout()" title="Вийти"><i class="fas fa-sign-out-alt"></i></button>
+    </div>
+  </aside>
+
+  <div class="main-content">
+    <header class="topbar">
+      <button class="icon-btn" id="sidebar-toggle"><i class="fas fa-bars"></i></button>
+      <div class="topbar-title" id="form-title">Новий об'єкт</div>
+      <div class="topbar-actions">
+        <a href="properties.html" class="btn btn-outline btn-sm"><i class="fas fa-arrow-left"></i> Назад</a>
+      </div>
+    </header>
+
+    <main class="page-content">
+      <form id="property-form" onsubmit="submitForm(event)">
+        <div style="display:grid;grid-template-columns:1fr 360px;gap:24px;align-items:start">
+
+          <!-- Left column -->
+          <div>
+            <div class="page-form" style="margin-bottom:20px">
+              <div class="section-title" style="margin-bottom:20px"><i class="fas fa-info-circle" style="color:var(--gold);margin-right:8px"></i>Основна інформація</div>
+              <div class="form-grid">
+                <div class="form-group">
+                  <label class="form-label">Тип об'єкта *</label>
+                  <select class="form-control" name="type" id="prop-type" required onchange="onTypeChange()">
+                    <option value="">— Оберіть тип —</option>
+                    <option value="apartment">🏢 Квартира</option>
+                    <option value="house">🏠 Будинок</option>
+                    <option value="land">🌿 Ділянка</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Статус *</label>
+                  <select class="form-control" name="status" required>
+                    <option value="available">✅ Доступний</option>
+                    <option value="reserved">⏳ Зарезервовано</option>
+                    <option value="sold">🔴 Продано</option>
+                  </select>
+                </div>
+                <div class="form-group full">
+                  <label class="form-label">Назва об'єкта *</label>
+                  <input class="form-control" name="title" placeholder="Напр.: Простора квартира в центрі міста" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Ціна (USD) *</label>
+                  <input class="form-control" name="price" type="number" min="0" step="100" placeholder="0" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Площа (м²)</label>
+                  <input class="form-control" name="area" type="number" min="0" step="0.1" placeholder="0">
+                </div>
+              </div>
+            </div>
+
+            <div class="page-form" style="margin-bottom:20px">
+              <div class="section-title" style="margin-bottom:20px"><i class="fas fa-map-marker-alt" style="color:var(--gold);margin-right:8px"></i>Місцезнаходження</div>
+              <div class="form-grid">
+                <div class="form-group">
+                  <label class="form-label">Місто *</label>
+                  <input class="form-control" name="city" placeholder="Київ" required>
+                </div>
+                <div class="form-group">
+                  <label class="form-label">Район</label>
+                  <input class="form-control" name="district" placeholder="Шевченківський">
+                </div>
+                <div class="form-group full">
+                  <label class="form-label">Адреса</label>
+                  <input class="form-control" name="address" placeholder="вул. Хрещатик, 1">
+                </div>
+              </div>
+            </div>
+
+            <div class="page-form" id="details-block" style="margin-bottom:20px;display:none">
+              <div class="section-title" style="margin-bottom:20px"><i class="fas fa-th" style="color:var(--gold);margin-right:8px"></i>Характеристики</div>
+              <div class="form-grid" id="details-fields"></div>
+            </div>
+
+            <div class="page-form">
+              <div class="section-title" style="margin-bottom:20px"><i class="fas fa-align-left" style="color:var(--gold);margin-right:8px"></i>Опис</div>
+              <textarea class="form-control" name="description" rows="5" placeholder="Детальний опис об'єкта нерухомості..."></textarea>
+            </div>
+          </div>
+
+          <!-- Right column -->
+          <div>
+            <div class="page-form" style="margin-bottom:20px">
+              <div class="section-title" style="margin-bottom:16px"><i class="fas fa-images" style="color:var(--gold);margin-right:8px"></i>Фотографії</div>
+              <div class="img-upload-area" id="upload-area" onclick="document.getElementById('img-input').click()">
+                <i class="fas fa-cloud-upload-alt"></i>
+                <p><strong>Натисніть або перетягніть</strong> фото сюди</p>
+                <p style="margin-top:4px;font-size:12px">PNG, JPG до 15 МБ · До 10 фото</p>
+                <input type="file" id="img-input" multiple accept="image/*" onchange="handleImages(this)">
+              </div>
+              <div class="img-previews" id="img-previews"></div>
+              <div id="existing-images"></div>
+            </div>
+
+            <div class="page-form">
+              <div class="section-title" style="margin-bottom:16px"><i class="fas fa-save" style="color:var(--gold);margin-right:8px"></i>Зберегти</div>
+              <p style="color:var(--muted);font-size:13px;margin-bottom:16px">Перевірте всі дані перед збереженням.</p>
+              <button type="submit" class="btn btn-primary btn-full" id="submit-btn">
+                <i class="fas fa-save"></i> Зберегти об'єкт
+              </button>
+              <a href="properties.html" class="btn btn-outline btn-full" style="margin-top:10px;justify-content:center">
+                Скасувати
+              </a>
+            </div>
+          </div>
+        </div>
+      </form>
+    </main>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/property-form.js"></script>
+</body>
+</html>

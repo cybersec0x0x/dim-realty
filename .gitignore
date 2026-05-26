@@ -1,0 +1,9 @@
+node_modules/
+db/realty.db
+uploads/*
+!uploads/.gitkeep
+*.log
+.env
+.env.local
+.DS_Store
+Thumbs.db

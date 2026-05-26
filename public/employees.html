@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Dim Realty — Співробітники</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.0/css/all.min.css">
+<link rel="stylesheet" href="/css/style.css">
+</head>
+<body>
+<div class="layout">
+  <aside class="sidebar">
+    <div class="sidebar-logo">
+      <svg viewBox="0 0 40 40" fill="none"><rect width="40" height="40" rx="8" fill="#0D2137"/><rect x="1" y="1" width="38" height="38" rx="7" stroke="#C8A951" stroke-width="1" fill="none" opacity="0.35"/><rect x="26" y="6" width="5" height="11" rx="0.5" fill="#C8A951"/><path d="M20 5L1 19L39 19Z" fill="#C8A951" fill-opacity="0.12"/><polyline points="1,19 20,5 39,19" stroke="#C8A951" stroke-width="2" stroke-linejoin="round" fill="none"/><rect x="3" y="19" width="34" height="16" fill="none" stroke="#C8A951" stroke-width="1.5"/><rect x="5" y="21" width="8" height="5" rx="0.5" fill="none" stroke="#C8A951" stroke-width="1.2"/><line x1="9" y1="21" x2="9" y2="26" stroke="#C8A951" stroke-width="0.8" opacity="0.6"/><line x1="5" y1="23.5" x2="13" y2="23.5" stroke="#C8A951" stroke-width="0.8" opacity="0.6"/><rect x="27" y="21" width="8" height="5" rx="0.5" fill="none" stroke="#C8A951" stroke-width="1.2"/><line x1="31" y1="21" x2="31" y2="26" stroke="#C8A951" stroke-width="0.8" opacity="0.6"/><line x1="27" y1="23.5" x2="35" y2="23.5" stroke="#C8A951" stroke-width="0.8" opacity="0.6"/><rect x="15" y="26" width="10" height="9" rx="1" fill="#C8A951"/><circle cx="23" cy="31" r="0.9" fill="#0D2137"/></svg>
+      <div class="brand-text"><div class="name"><span>DIM</span> REALTY</div><div class="sub">Admin Panel</div></div>
+    </div>
+    <nav class="sidebar-nav">
+      <div class="nav-section-label">Головне</div>
+      <a href="dashboard.html" class="nav-item" data-page="dashboard"><i class="fas fa-chart-pie"></i> Дашборд</a>
+      <div class="nav-section-label">Нерухомість</div>
+      <a href="properties.html?type=apartment" class="nav-item" data-page="apartments"><i class="fas fa-building"></i> Квартири</a>
+      <a href="properties.html?type=house" class="nav-item" data-page="houses"><i class="fas fa-home"></i> Будинки</a>
+      <a href="properties.html?type=land" class="nav-item" data-page="land"><i class="fas fa-tree"></i> Ділянки</a>
+      <a href="properties.html" class="nav-item" data-page="properties"><i class="fas fa-list"></i> Всі об'єкти</a>
+      <div class="nav-section-label">Адміністрування</div>
+      <a href="employees.html" class="nav-item active" data-page="employees"><i class="fas fa-users"></i> Співробітники</a>
+    </nav>
+    <div class="sidebar-user">
+      <div class="user-avatar-sm" id="sidebar-avatar"></div>
+      <div class="sidebar-user-info">
+        <div class="uname" id="sidebar-user-name">Завантаження...</div>
+        <div class="urole" id="sidebar-user-role"></div>
+      </div>
+      <button class="sidebar-logout" onclick="logout()" title="Вийти"><i class="fas fa-sign-out-alt"></i></button>
+    </div>
+  </aside>
+
+  <div class="main-content">
+    <header class="topbar">
+      <button class="icon-btn" id="sidebar-toggle"><i class="fas fa-bars"></i></button>
+      <div class="topbar-title">Співробітники</div>
+      <div class="topbar-actions">
+        <input class="filter-input" id="emp-search" placeholder="Пошук..." oninput="filterEmployees()" style="width:200px">
+        <button class="btn btn-gold btn-sm admin-only" onclick="openModal()"><i class="fas fa-user-plus"></i> Додати</button>
+      </div>
+    </header>
+
+    <main class="page-content">
+      <div class="table-card">
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Співробітник</th>
+                <th>Роль</th>
+                <th>Телефон</th>
+                <th>Статус</th>
+                <th>Дата реєстрації</th>
+                <th>Дії</th>
+              </tr>
+            </thead>
+            <tbody id="employees-tbody">
+              <tr><td colspan="6"><div class="loading-wrap"><div class="spinner"></div></div></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </main>
+  </div>
+</div>
+
+<!-- Add/Edit Modal -->
+<div class="modal-overlay" id="emp-modal">
+  <div class="modal" style="max-width:520px">
+    <div class="modal-header">
+      <span class="modal-title" id="modal-title">Новий співробітник</span>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <form id="emp-form" onsubmit="saveEmployee(event)">
+        <input type="hidden" id="emp-id">
+        <div class="form-grid" style="gap:16px">
+          <div class="form-group">
+            <label class="form-label">Повне ім'я *</label>
+            <input class="form-control" id="emp-name" placeholder="Іван Іваненко" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Email *</label>
+            <input class="form-control" id="emp-email" type="email" placeholder="ivan@dimrealty.ua" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Телефон</label>
+            <input class="form-control" id="emp-phone" placeholder="+380 XX XXX XXXX">
+          </div>
+          <div class="form-group">
+            <label class="form-label">Роль</label>
+            <select class="form-control" id="emp-role">
+              <option value="agent">Агент</option>
+              <option value="admin">Адміністратор</option>
+            </select>
+          </div>
+          <div class="form-group full">
+            <label class="form-label" id="pwd-label">Пароль *</label>
+            <input class="form-control" id="emp-password" type="password" placeholder="Мінімум 6 символів">
+            <small class="text-muted" id="pwd-hint" style="display:none">Залиште порожнім, щоб не змінювати</small>
+          </div>
+        </div>
+      </form>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeModal()">Скасувати</button>
+      <button class="btn btn-primary" onclick="document.getElementById('emp-form').requestSubmit()" id="save-btn">
+        <i class="fas fa-save"></i> Зберегти
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Delete Modal -->
+<div class="modal-overlay" id="del-modal">
+  <div class="modal" style="max-width:400px">
+    <div class="modal-header">
+      <span class="modal-title">Видалення співробітника</span>
+      <button class="modal-close" onclick="closeDelModal()">×</button>
+    </div>
+    <div class="modal-body">
+      <p style="color:var(--text-2)">Ви впевнені, що хочете видалити цього співробітника? Всі його дані будуть втрачені.</p>
+    </div>
+    <div class="modal-footer">
+      <button class="btn btn-outline" onclick="closeDelModal()">Скасувати</button>
+      <button class="btn btn-danger" id="confirm-del-btn"><i class="fas fa-trash"></i> Видалити</button>
+    </div>
+  </div>
+</div>
+
+<script src="/js/api.js"></script>
+<script src="/js/auth.js"></script>
+<script src="/js/employees.js"></script>
+</body>
+</html>
