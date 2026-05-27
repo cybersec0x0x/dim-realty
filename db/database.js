@@ -103,11 +103,17 @@ async function initDB() {
       floor       INTEGER,
       status      TEXT DEFAULT 'available',
       images      TEXT DEFAULT '[]',
+      owner_phone TEXT,
+      house_type  TEXT,
       created_by  INTEGER REFERENCES users(id),
       created_at  DATETIME DEFAULT (datetime('now')),
       updated_at  DATETIME DEFAULT (datetime('now'))
     )
   `);
+
+  // Migrate existing DB — add columns if missing (throws if already exist, that's fine)
+  try { _wrapper._db.run('ALTER TABLE properties ADD COLUMN owner_phone TEXT'); _wrapper._save(); } catch {}
+  try { _wrapper._db.run('ALTER TABLE properties ADD COLUMN house_type TEXT');  _wrapper._save(); } catch {}
 
   // Only seed the admin account — no demo data
   const admin = _wrapper.prepare('SELECT id FROM users WHERE email=?').get('admin@dimrealty.ua');

@@ -260,6 +260,38 @@ tr:hover td { background: rgba(240,242,245,.6); }
 .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
 .form-group { display: flex; flex-direction: column; gap: 6px; }
 .form-group.full { grid-column: 1 / -1; }
+
+/* ── Rooms selector ────────────────────────── */
+.rooms-selector {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-top: 4px;
+}
+.room-btn {
+  min-width: 52px;
+  height: 44px;
+  border: 2px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--text-2);
+  font-size: 15px;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  transition: var(--transition);
+  padding: 0 12px;
+}
+.room-btn:hover {
+  border-color: var(--gold);
+  color: var(--gold);
+}
+.room-btn.active {
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #fff;
+  box-shadow: 0 2px 8px rgba(13,33,55,.25);
+}
 .form-label { font-weight: 500; font-size: 13px; color: var(--text-2); }
 .form-control {
   padding: 10px 14px; border: 1.5px solid var(--border);

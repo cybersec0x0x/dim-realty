@@ -57,6 +57,7 @@ function buildQuery() {
 
 // ── Render ────────────────────────────────────────────────────────────────────
 const ICONS = { apartment: 'fa-building', house: 'fa-home', land: 'fa-tree' };
+const HOUSE_TYPE_LABELS = { private: 'Приватний будинок', duplex: 'Дюплекс', townhouse: 'Таунхаус', part: 'Частина будинку' };
 
 function propImg(p, size = 190) {
   const imgs = JSON.parse(p.images || '[]');
@@ -71,6 +72,7 @@ function renderGrid(props) {
     const rooms  = p.rooms  ? `<div class="prop-meta-item"><i class="fas fa-door-open"></i> ${p.rooms} кімн.</div>` : '';
     const floor  = p.floor  ? `<div class="prop-meta-item"><i class="fas fa-layer-group"></i> ${p.floor}/${p.floors||'?'} пов.</div>` : '';
     const floors = (!p.floor && p.floors) ? `<div class="prop-meta-item"><i class="fas fa-layer-group"></i> ${p.floors} пов.</div>` : '';
+    const htype  = p.house_type ? `<div class="prop-meta-item"><i class="fas fa-tag"></i> ${HOUSE_TYPE_LABELS[p.house_type]||p.house_type}</div>` : '';
     return `<div class="prop-card">
       <div class="prop-img" style="cursor:pointer" onclick="openDetail(${p.id})">
         ${propImg(p)}
@@ -86,7 +88,7 @@ function renderGrid(props) {
         <div class="prop-title" title="${p.title}">${p.title}</div>
         <div class="prop-meta">
           ${p.area ? `<div class="prop-meta-item"><i class="fas fa-ruler-combined"></i> ${fmtArea(p.area)}</div>` : ''}
-          ${rooms}${floor}${floors}
+          ${rooms}${floor}${floors}${htype}
         </div>
         ${p.city || p.address ? `<div class="prop-address"><i class="fas fa-map-marker-alt"></i> ${[p.city, p.address].filter(Boolean).join(', ')}</div>` : ''}
         <div class="prop-actions">
@@ -215,17 +217,22 @@ async function openDetail(id) {
 
     // Specs grid
     const specs = [];
+    if (p.house_type) specs.push([HOUSE_TYPE_LABELS[p.house_type]||p.house_type, '', 'fa-tag', true]);
     if (p.area)   specs.push(['Площа',      fmtArea(p.area),        'fa-ruler-combined']);
     if (p.rooms)  specs.push(['Кімнат',      p.rooms,                'fa-door-open']);
     if (p.floor)  specs.push(['Поверх',      `${p.floor}/${p.floors||'?'}`, 'fa-layer-group']);
     else if (p.floors) specs.push(['Поверховість', p.floors,         'fa-layer-group']);
     if (p.city)   specs.push(['Місто',        p.city,               'fa-city']);
     if (p.district) specs.push(['Район',      p.district,           'fa-map']);
+    if (p.owner_phone) specs.push(['Власник',  p.owner_phone,        'fa-phone']);
 
-    document.getElementById('detail-specs').innerHTML = specs.map(([label, val, icon]) => `
+    document.getElementById('detail-specs').innerHTML = specs.map(([label, val, icon, badge]) => `
       <div style="background:var(--bg);border-radius:8px;padding:12px;display:flex;align-items:center;gap:10px">
         <i class="fas ${icon}" style="color:var(--gold);font-size:16px;width:18px;text-align:center"></i>
-        <div><div style="font-size:11px;color:var(--muted)">${label}</div><div style="font-weight:600;font-size:14px">${val}</div></div>
+        <div>${badge
+          ? `<div style="font-weight:600;font-size:13px;color:var(--gold)">${label}</div>`
+          : `<div style="font-size:11px;color:var(--muted)">${label}</div><div style="font-weight:600;font-size:14px">${val}</div>`
+        }</div>
       </div>`).join('');
 
     if (p.address || p.city) {

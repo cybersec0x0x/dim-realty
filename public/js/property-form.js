@@ -26,10 +26,12 @@ async function loadProperty() {
     form.querySelector('[name=district]').value = p.district || '';
     form.querySelector('[name=address]').value = p.address || '';
     form.querySelector('[name=description]').value = p.description || '';
+    if (p.owner_phone) { const el = form.querySelector('[name=owner_phone]'); if (el) el.value = p.owner_phone; }
     onTypeChange();
-    if (p.rooms) form.querySelector('[name=rooms]') && (form.querySelector('[name=rooms]').value = p.rooms);
-    if (p.floors) form.querySelector('[name=floors]') && (form.querySelector('[name=floors]').value = p.floors);
-    if (p.floor) form.querySelector('[name=floor]') && (form.querySelector('[name=floor]').value = p.floor);
+    if (p.rooms)  setRooms(p.rooms);
+    if (p.floors) { const el = form.querySelector('[name=floors]'); if (el) el.value = p.floors; }
+    if (p.floor)  { const el = form.querySelector('[name=floor]');  if (el) el.value = p.floor;  }
+    if (p.house_type) { const el = form.querySelector('[name=house_type]'); if (el) el.value = p.house_type; }
 
     existingImages = JSON.parse(p.images || '[]');
     renderExistingImages();
@@ -60,11 +62,19 @@ function onTypeChange() {
   const fields = document.getElementById('details-fields');
   if (!type || type === 'land') { block.style.display = 'none'; return; }
   block.style.display = 'block';
+
   if (type === 'apartment') {
     fields.innerHTML = `
-      <div class="form-group">
+      <div class="form-group full">
         <label class="form-label">Кількість кімнат</label>
-        <input class="form-control" name="rooms" type="number" min="1" max="20" placeholder="3">
+        <div class="rooms-selector" id="rooms-selector">
+          <button type="button" class="room-btn" data-val="1" onclick="setRooms(1)">1</button>
+          <button type="button" class="room-btn" data-val="2" onclick="setRooms(2)">2</button>
+          <button type="button" class="room-btn" data-val="3" onclick="setRooms(3)">3</button>
+          <button type="button" class="room-btn" data-val="4" onclick="setRooms(4)">4</button>
+          <button type="button" class="room-btn" data-val="5" onclick="setRooms(5)">5+</button>
+        </div>
+        <input type="hidden" name="rooms" id="rooms-val">
       </div>
       <div class="form-group">
         <label class="form-label">Поверх</label>
@@ -76,23 +86,41 @@ function onTypeChange() {
       </div>`;
   } else if (type === 'house') {
     fields.innerHTML = `
-      <div class="form-group">
+      <div class="form-group full">
+        <label class="form-label">Вид будинку</label>
+        <select class="form-control" name="house_type">
+          <option value="">— Оберіть вид —</option>
+          <option value="private">🏠 Приватний будинок</option>
+          <option value="duplex">🏘 Дюплекс</option>
+          <option value="townhouse">🏙 Таунхаус</option>
+          <option value="part">🏠 Частина будинку</option>
+        </select>
+      </div>
+      <div class="form-group full">
         <label class="form-label">Кількість кімнат</label>
-        <input class="form-control" name="rooms" type="number" min="1" max="50" placeholder="5">
+        <div class="rooms-selector" id="rooms-selector">
+          <button type="button" class="room-btn" data-val="1" onclick="setRooms(1)">1</button>
+          <button type="button" class="room-btn" data-val="2" onclick="setRooms(2)">2</button>
+          <button type="button" class="room-btn" data-val="3" onclick="setRooms(3)">3</button>
+          <button type="button" class="room-btn" data-val="4" onclick="setRooms(4)">4</button>
+          <button type="button" class="room-btn" data-val="5" onclick="setRooms(5)">5+</button>
+          <button type="button" class="room-btn" data-val="6" onclick="setRooms(6)">6+</button>
+        </div>
+        <input type="hidden" name="rooms" id="rooms-val">
       </div>
       <div class="form-group">
         <label class="form-label">Кількість поверхів</label>
         <input class="form-control" name="floors" type="number" min="1" max="10" placeholder="2">
       </div>`;
   }
-  // Re-populate if editing
-  if (isEdit && pid) {
-    const form = document.getElementById('property-form');
-    ['rooms','floors','floor'].forEach(n => {
-      const el = form.querySelector(`[name=${n}]`);
-      if (el && el._savedVal) el.value = el._savedVal;
-    });
-  }
+}
+
+function setRooms(val) {
+  const hidden = document.getElementById('rooms-val');
+  if (hidden) hidden.value = val;
+  document.querySelectorAll('.room-btn').forEach(btn => {
+    btn.classList.toggle('active', +btn.dataset.val === +val);
+  });
 }
 
 function handleImages(input) {
@@ -134,7 +162,7 @@ async function submitForm(e) {
 
   const form = e.target;
   const fd = new FormData();
-  const fields = ['type','status','title','price','area','city','district','address','description','rooms','floors','floor'];
+  const fields = ['type','status','title','price','area','city','district','address','description','rooms','floors','floor','owner_phone','house_type'];
   fields.forEach(f => { const el = form.querySelector(`[name=${f}]`); if (el && el.value) fd.append(f, el.value); });
 
   // Existing images to keep

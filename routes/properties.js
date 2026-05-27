@@ -74,17 +74,17 @@ router.get('/:id', authMiddleware, (req, res) => {
 
 // Create
 router.post('/', authMiddleware, upload.array('images', 10), (req, res) => {
-  const { type, title, description, price, area, address, city, district, rooms, floors, floor, status } = req.body;
+  const { type, title, description, price, area, address, city, district, rooms, floors, floor, status, owner_phone, house_type } = req.body;
   if (!type || !title || !price)
     return res.status(400).json({ error: 'Тип, назва та ціна обовʼязкові' });
   const images = JSON.stringify(req.files?.map(f => f.filename) ?? []);
   try {
     const r = getDB().prepare(`
-      INSERT INTO properties (type,title,description,price,area,address,city,district,rooms,floors,floor,status,images,created_by)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+      INSERT INTO properties (type,title,description,price,area,address,city,district,rooms,floors,floor,status,images,owner_phone,house_type,created_by)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
     `).run(type, title, description, +price, area ? +area : null, address, city, district,
            rooms ? +rooms : null, floors ? +floors : null, floor ? +floor : null,
-           status || 'available', images, req.user.id);
+           status || 'available', images, owner_phone || null, house_type || null, req.user.id);
     res.json({ id: r.lastInsertRowid, message: "Об'єкт створено" });
   } catch (e) {
     console.error('[CREATE]', e?.message || String(e));
@@ -98,19 +98,20 @@ router.put('/:id', authMiddleware, upload.array('images', 10), (req, res) => {
   const existing = db.prepare('SELECT id FROM properties WHERE id=?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: "Об'єкт не знайдено" });
 
-  const { type, title, description, price, area, address, city, district, rooms, floors, floor, status, keepImages } = req.body;
+  const { type, title, description, price, area, address, city, district, rooms, floors, floor, status, keepImages, owner_phone, house_type } = req.body;
   const kept = keepImages ? (Array.isArray(keepImages) ? keepImages : [keepImages]) : [];
   const newFiles = req.files?.map(f => f.filename) ?? [];
   const images = JSON.stringify([...kept, ...newFiles]);
   try {
     db.prepare(`
       UPDATE properties SET type=?,title=?,description=?,price=?,area=?,address=?,city=?,district=?,
-      rooms=?,floors=?,floor=?,status=?,images=?,updated_at=datetime('now') WHERE id=?
+      rooms=?,floors=?,floor=?,status=?,images=?,owner_phone=?,house_type=?,updated_at=datetime('now') WHERE id=?
     `).run(type, title, description, +price, area ? +area : null, address, city, district,
            rooms ? +rooms : null, floors ? +floors : null, floor ? +floor : null,
-           status, images, req.params.id);
+           status, images, owner_phone || null, house_type || null, req.params.id);
     res.json({ message: "Об'єкт оновлено" });
-  } catch {
+  } catch (e) {
+    console.error('[UPDATE]', e?.message || String(e));
     res.status(500).json({ error: 'Помилка при оновленні' });
   }
 });
