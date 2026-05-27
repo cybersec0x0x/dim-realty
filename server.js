@@ -1,8 +1,13 @@
 const express = require('express');
 const path = require('path');
+const fs = require('fs');
 const cookieParser = require('cookie-parser');
 const { initDB } = require('./db/database');
 const { PORT } = require('./config');
+
+const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, 'data');
+const uploadsDir = path.join(DATA_DIR, 'uploads');
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
 async function start() {
   await initDB();
@@ -12,7 +17,7 @@ async function start() {
   app.use(express.urlencoded({ extended: true }));
   app.use(cookieParser());
   app.use(express.static(path.join(__dirname, 'public')));
-  app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+  app.use('/uploads', express.static(uploadsDir));
 
   app.use('/api/auth',       require('./routes/auth'));
   app.use('/api/properties', require('./routes/properties'));

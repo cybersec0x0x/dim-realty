@@ -3,7 +3,12 @@ const bcrypt = require('bcryptjs');
 const path = require('path');
 const fs = require('fs');
 
-const DB_PATH = path.join(__dirname, 'realty.db');
+// On Railway: mount a Volume at /app/data — DB and uploads both persist there.
+// Locally: falls back to  <project>/data/
+const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
+if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+
+const DB_PATH = path.join(DATA_DIR, 'realty.db');
 let _wrapper = null;
 
 // ── sql.js compatibility wrapper (mimics better-sqlite3 sync API) ────────────
