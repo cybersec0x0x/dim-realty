@@ -31,6 +31,95 @@ function renderSidebarUser() {
   if (user.role !== 'admin') {
     document.querySelectorAll('.admin-only').forEach(el => el.style.display = 'none');
   }
+  // Make sidebar user block clickable → profile edit
+  const sidebarUser = document.querySelector('.sidebar-user');
+  if (sidebarUser) {
+    sidebarUser.style.cursor = 'pointer';
+    sidebarUser.title = 'Редагувати профіль';
+    sidebarUser.addEventListener('click', e => {
+      if (e.target.closest('.sidebar-logout')) return; // don't open on logout click
+      openProfileModal();
+    });
+  }
+  // Inject profile modal once
+  if (!document.getElementById('profile-modal')) {
+    const m = document.createElement('div');
+    m.id = 'profile-modal';
+    m.className = 'modal-overlay';
+    m.innerHTML = `
+      <div class="modal" style="max-width:460px">
+        <div class="modal-header">
+          <span class="modal-title"><i class="fas fa-user-edit" style="color:var(--gold);margin-right:8px"></i>Мій профіль</span>
+          <button class="modal-close" onclick="document.getElementById('profile-modal').classList.remove('open')">×</button>
+        </div>
+        <div class="modal-body">
+          <form id="profile-form" onsubmit="saveProfile(event)">
+            <div class="form-grid" style="gap:16px">
+              <div class="form-group full">
+                <label class="form-label">Повне ім'я *</label>
+                <input class="form-control" id="prof-name" required placeholder="Іван Іваненко">
+              </div>
+              <div class="form-group full">
+                <label class="form-label">Телефон</label>
+                <input class="form-control" id="prof-phone" type="tel" placeholder="+380 XX XXX XX XX">
+              </div>
+              <div class="form-group full" style="border-top:1px solid var(--border);padding-top:16px;margin-top:4px">
+                <label class="form-label">Новий пароль</label>
+                <input class="form-control" id="prof-password" type="password" placeholder="Залиште порожнім — не зміниться">
+              </div>
+            </div>
+          </form>
+        </div>
+        <div class="modal-footer">
+          <button class="btn btn-outline" onclick="document.getElementById('profile-modal').classList.remove('open')">Скасувати</button>
+          <button class="btn btn-primary" id="prof-save-btn" onclick="document.getElementById('profile-form').requestSubmit()">
+            <i class="fas fa-save"></i> Зберегти
+          </button>
+        </div>
+      </div>`;
+    document.body.appendChild(m);
+  }
+}
+
+function openProfileModal() {
+  const user = getUser();
+  if (!user) return;
+  document.getElementById('prof-name').value     = user.name  || '';
+  document.getElementById('prof-phone').value    = user.phone || '';
+  document.getElementById('prof-password').value = '';
+  document.getElementById('profile-modal').classList.add('open');
+}
+
+async function saveProfile(e) {
+  e.preventDefault();
+  const btn = document.getElementById('prof-save-btn');
+  btn.disabled = true;
+  const body = {
+    name:     document.getElementById('prof-name').value,
+    phone:    document.getElementById('prof-phone').value,
+    password: document.getElementById('prof-password').value || undefined,
+  };
+  try {
+    await api.put('/auth/me', body);
+    // Update local user cache
+    const user = getUser();
+    if (user) {
+      user.name  = body.name;
+      user.phone = body.phone;
+      localStorage.setItem('dr_user', JSON.stringify(user));
+    }
+    document.getElementById('profile-modal').classList.remove('open');
+    // Refresh sidebar name
+    const nameEl = document.getElementById('sidebar-user-name');
+    if (nameEl) nameEl.textContent = body.name;
+    const avEl = document.getElementById('sidebar-avatar');
+    if (avEl && !user?.avatar) avEl.textContent = body.name.charAt(0).toUpperCase();
+    toast('Профіль оновлено', 'success');
+  } catch(ex) {
+    toast(ex.message || 'Помилка збереження', 'error');
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 function setActiveNav(page) {

@@ -48,11 +48,18 @@
     <main class="page-content">
       <!-- Filters -->
       <div class="filter-bar">
-        <select class="filter-select" id="f-type" onchange="applyFilters()">
+        <select class="filter-select" id="f-type" onchange="onTypeFilterChange()">
           <option value="">Всі типи</option>
-          <option value="apartment">Квартири</option>
-          <option value="house">Будинки</option>
-          <option value="land">Ділянки</option>
+          <option value="apartment">🏢 Квартири</option>
+          <option value="house">🏠 Будинки</option>
+          <option value="land">🌿 Ділянки</option>
+        </select>
+        <select class="filter-select" id="f-house-type" onchange="applyFilters()" style="display:none">
+          <option value="">Всі будинки</option>
+          <option value="private">🏠 Приватний будинок</option>
+          <option value="duplex">🏘 Дюплекс</option>
+          <option value="townhouse">🏙 Таунхаус</option>
+          <option value="part">🏠 Частина будинку</option>
         </select>
         <select class="filter-select" id="f-status" onchange="applyFilters()">
           <option value="">Всі статуси</option>

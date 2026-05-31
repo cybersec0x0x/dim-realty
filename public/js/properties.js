@@ -16,6 +16,7 @@ if (typeParam) {
   document.getElementById('f-type').value = typeParam;
   const titles = { apartment: 'Квартири', house: 'Будинки', land: 'Ділянки' };
   document.getElementById('page-title').textContent = titles[typeParam] || "Всі об'єкти";
+  if (typeParam === 'house') document.getElementById('f-house-type').style.display = '';
 }
 
 setView(currentView, false);
@@ -38,18 +39,32 @@ function debounceFilter() {
   debounceTimer = setTimeout(applyFilters, 400);
 }
 
+function onTypeFilterChange() {
+  const type = document.getElementById('f-type').value;
+  const houseFilter = document.getElementById('f-house-type');
+  if (type === 'house') {
+    houseFilter.style.display = '';
+  } else {
+    houseFilter.style.display = 'none';
+    houseFilter.value = '';
+  }
+  applyFilters();
+}
+
 function buildQuery() {
   const p = new URLSearchParams();
-  const type   = document.getElementById('f-type').value;
-  const status = document.getElementById('f-status').value;
-  const city   = document.getElementById('f-city').value.trim();
-  const search = document.getElementById('f-search').value.trim();
-  const sort   = document.getElementById('f-sort').value;
-  if (type)   p.set('type', type);
-  if (status) p.set('status', status);
-  if (city)   p.set('city', city);
-  if (search) p.set('search', search);
-  if (sort)   p.set('sort', sort);
+  const type      = document.getElementById('f-type').value;
+  const houseType = document.getElementById('f-house-type').value;
+  const status    = document.getElementById('f-status').value;
+  const city      = document.getElementById('f-city').value.trim();
+  const search    = document.getElementById('f-search').value.trim();
+  const sort      = document.getElementById('f-sort').value;
+  if (type)      p.set('type', type);
+  if (houseType) p.set('house_type', houseType);
+  if (status)    p.set('status', status);
+  if (city)      p.set('city', city);
+  if (search)    p.set('search', search);
+  if (sort)      p.set('sort', sort);
   p.set('page', currentPage);
   p.set('limit', 12);
   return p.toString();

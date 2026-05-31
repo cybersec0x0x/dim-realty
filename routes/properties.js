@@ -44,13 +44,14 @@ router.get('/stats', authMiddleware, (req, res) => {
 
 // List
 router.get('/', authMiddleware, (req, res) => {
-  const { type, status, city, search, sort = 'date_desc', page = 1, limit = 12 } = req.query;
+  const { type, status, city, search, sort = 'date_desc', page = 1, limit = 12, house_type } = req.query;
   const db = getDB();
   let where = 'WHERE 1=1';
   const p = [];
-  if (type)   { where += ' AND p.type=?';   p.push(type); }
-  if (status) { where += ' AND p.status=?'; p.push(status); }
-  if (city)   { where += ' AND p.city LIKE ?'; p.push(`%${city}%`); }
+  if (type)       { where += ' AND p.type=?';       p.push(type); }
+  if (house_type) { where += ' AND p.house_type=?'; p.push(house_type); }
+  if (status)     { where += ' AND p.status=?';     p.push(status); }
+  if (city)       { where += ' AND p.city LIKE ?';  p.push(`%${city}%`); }
   if (search) {
     where += ' AND (p.title LIKE ? OR p.address LIKE ? OR p.city LIKE ?)';
     p.push(`%${search}%`, `%${search}%`, `%${search}%`);
