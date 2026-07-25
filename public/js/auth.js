@@ -134,7 +134,15 @@ function fmtPrice(n) {
   return new Intl.NumberFormat('uk-UA', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
 }
 
-function fmtArea(n) { return n ? `${n} м²` : '—'; }
+function fmtArea(n, type) {
+  if (!n) return '—';
+  if (type === 'land') {
+    const hectares = (n / 10000).toFixed(2);
+    const sotky = Math.round(n / 100);
+    return `${n} м² (${sotky} соток) / ${hectares} га`;
+  }
+  return `${n} м²`;
+}
 
 // Property type labels
 const TYPE_LABELS = { apartment: 'Квартира', house: 'Будинок', land: 'Ділянка' };
