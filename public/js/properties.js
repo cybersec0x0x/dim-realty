@@ -102,7 +102,7 @@ function renderGrid(props) {
         <div class="prop-price">${fmtPrice(p.price)}</div>
         <div class="prop-title" title="${p.title}">${p.title}</div>
         <div class="prop-meta">
-          ${p.area ? `<div class="prop-meta-item"><i class="fas fa-ruler-combined"></i> ${fmtArea(p.area)}</div>` : ''}
+          ${p.area ? `<div class="prop-meta-item"><i class="fas fa-ruler-combined"></i> ${fmtArea(p.area, p.type)}</div>` : ''}
           ${rooms}${floor}${floors}${htype}
         </div>
         ${p.city || p.address ? `<div class="prop-address"><i class="fas fa-map-marker-alt"></i> ${[p.city, p.address].filter(Boolean).join(', ')}</div>` : ''}
@@ -122,7 +122,7 @@ function renderList(props) {
       <td style="cursor:pointer;font-weight:600;color:var(--primary)" onclick="openDetail(${p.id})">${p.title}</td>
       <td>${typeBadge(p.type)}</td>
       <td style="font-weight:700;color:var(--primary);white-space:nowrap">${fmtPrice(p.price)}</td>
-      <td>${fmtArea(p.area)}</td>
+      <td>${fmtArea(p.area, p.type)}</td>
       <td>${p.city || '—'}</td>
       <td>${statusBadge(p.status)}</td>
       <td>${p.agent_name || '—'}</td>
@@ -190,6 +190,8 @@ async function openDetail(id) {
   try {
     const p = await api.get('/properties/' + id);
     const imgs = JSON.parse(p.images || '[]');
+    fullscreenPhotos = imgs;
+    fullscreenPhotoIndex = 0;
 
     // Gallery
     const gallery = document.getElementById('detail-gallery');
@@ -233,7 +235,7 @@ async function openDetail(id) {
     // Specs grid
     const specs = [];
     if (p.house_type) specs.push([HOUSE_TYPE_LABELS[p.house_type]||p.house_type, '', 'fa-tag', true]);
-    if (p.area)   specs.push(['Площа',      fmtArea(p.area),        'fa-ruler-combined']);
+    if (p.area)   specs.push(['Площа',      fmtArea(p.area, p.type),        'fa-ruler-combined']);
     if (p.rooms)  specs.push(['Кімнат',      p.rooms,                'fa-door-open']);
     if (p.floor)  specs.push(['Поверх',      `${p.floor}/${p.floors||'?'}`, 'fa-layer-group']);
     else if (p.floors) specs.push(['Поверховість', p.floors,         'fa-layer-group']);
@@ -334,4 +336,39 @@ function exportCSV() {
   a.remove();
   URL.revokeObjectURL(url);
   toast('CSV-файл завантажено', 'success');
+}
+
+// ── Fullscreen photo gallery ──────────────────────────────────────────────────
+let fullscreenPhotos = [];
+let fullscreenPhotoIndex = 0;
+
+function openFullscreenPhoto() {
+  if (!fullscreenPhotos.length) return;
+  document.getElementById('fullscreen-photo-modal').classList.add('open');
+  showFullscreenPhoto();
+}
+
+function closeFullscreenPhoto() {
+  document.getElementById('fullscreen-photo-modal').classList.remove('open');
+}
+
+function showFullscreenPhoto() {
+  const img = document.getElementById('fullscreen-photo-img');
+  const counter = document.getElementById('fullscreen-photo-counter');
+  img.src = `/uploads/${fullscreenPhotos[fullscreenPhotoIndex]}`;
+  counter.textContent = `${fullscreenPhotoIndex + 1} / ${fullscreenPhotos.length}`;
+  
+  // Show/hide nav buttons
+  document.getElementById('fullscreen-photo-prev').style.display = fullscreenPhotos.length > 1 ? 'block' : 'none';
+  document.getElementById('fullscreen-photo-next').style.display = fullscreenPhotos.length > 1 ? 'block' : 'none';
+}
+
+function prevFullscreenPhoto() {
+  fullscreenPhotoIndex = (fullscreenPhotoIndex - 1 + fullscreenPhotos.length) % fullscreenPhotos.length;
+  showFullscreenPhoto();
+}
+
+function nextFullscreenPhoto() {
+  fullscreenPhotoIndex = (fullscreenPhotoIndex + 1) % fullscreenPhotos.length;
+  showFullscreenPhoto();
 }
