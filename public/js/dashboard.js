@@ -26,11 +26,11 @@ async function loadStats() {
 
     const val = s.totalValue >= 1_000_000
       ? `$${(s.totalValue / 1_000_000).toFixed(1)}M`
-      : `$${Math.round(s.totalValue / 1000)}K`;
-    document.getElementById('s-value').textContent = val || '$0';
+      : s.totalValue >= 1000 ? `$${Math.round(s.totalValue / 1000)}K` : `$${Math.round(s.totalValue)}`;
+    document.getElementById('s-value').textContent = val;
 
     renderCharts(s);
-  } catch (e) { console.error(e); }
+  } catch (e) { console.error(e); toast('Не вдалося завантажити статистику: ' + e.message, 'error'); }
 }
 
 function renderCharts(s) {
@@ -112,18 +112,18 @@ async function loadRecentProperties() {
       return;
     }
     el.innerHTML = properties.map(p => {
-      const imgs = JSON.parse(p.images || '[]');
+      const imgs = parseImages(p.images);
       const img = imgs.length
-        ? `<img src="/uploads/${imgs[0]}" style="width:44px;height:44px;border-radius:8px;object-fit:cover;flex-shrink:0" alt="">`
-        : `<div style="width:44px;height:44px;border-radius:8px;background:var(--primary);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fas fa-home" style="color:var(--gold);font-size:18px"></i></div>`;
-      return `<div class="list-item">
+        ? `<img src="${photoUrl(imgs[0])}" style="width:52px;height:42px;border-radius:9px;object-fit:cover;flex-shrink:0" alt="" loading="lazy">`
+        : `<div style="width:52px;height:42px;border-radius:9px;background:linear-gradient(135deg,#17395D,#0B1F36);display:flex;align-items:center;justify-content:center;flex-shrink:0"><i class="fas fa-home" style="color:var(--gold);font-size:16px"></i></div>`;
+      return `<a class="list-item" href="properties.html?open=${p.id}">
         ${img}
         <div class="list-item-info">
-          <div class="list-item-title">${p.title}</div>
+          <div class="list-item-title">${esc(p.title)}</div>
           <div class="list-item-sub" style="display:flex;gap:6px;margin-top:3px">${typeBadge(p.type)} ${statusBadge(p.status)}</div>
         </div>
-        <div class="list-item-price">${fmtPrice(p.price)}</div>
-      </div>`;
+        <div class="list-item-price">${esc(fmtPrice(p.price))}</div>
+      </a>`;
     }).join('');
   } catch { el.innerHTML = '<div class="no-results">Помилка завантаження</div>'; }
 }
@@ -138,16 +138,26 @@ async function loadRecentEmployees() {
     }
     el.innerHTML = emps.slice(0, 5).map(u => `
       <div class="list-item">
-        <div class="avatar">${u.name.charAt(0).toUpperCase()}</div>
+        <div class="avatar">${esc(u.name.charAt(0).toUpperCase())}</div>
         <div class="list-item-info">
-          <div class="list-item-title">${u.name}</div>
-          <div class="list-item-sub">${u.email}</div>
+          <div class="list-item-title">${esc(u.name)}</div>
+          <div class="list-item-sub">${esc(u.email)}</div>
         </div>
-        <span class="badge badge-${u.role}">${ROLE_LABELS[u.role] || u.role}</span>
+        <span class="badge badge-${esc(u.role)}">${esc(ROLE_LABELS[u.role] || u.role)}</span>
       </div>`).join('');
   } catch { el.innerHTML = '<div class="no-results">Помилка завантаження</div>'; }
 }
 
+// Greeting by time of day
+(function greet() {
+  const u = getUser();
+  const h = new Date().getHours();
+  const hello = h < 5 ? 'Доброї ночі' : h < 12 ? 'Доброго ранку' : h < 18 ? 'Доброго дня' : 'Доброго вечора';
+  const first = u && u.name ? String(u.name).split(' ')[0] : '';
+  const el = document.getElementById('greeting');
+  if (el) el.textContent = first ? `${hello}, ${first}!` : `${hello}!`;
+})();
+
 loadStats();
 loadRecentProperties();
-loadRecentEmployees();
+if (getUser()?.role === 'admin') loadRecentEmployees();

@@ -10,10 +10,17 @@ function headers(json = true) {
 async function req(method, url, body, formData) {
   const opts = { method, headers: headers(!formData) };
   if (body) opts.body = formData ? body : JSON.stringify(body);
-  const res = await fetch(BASE + url, opts);
-  if (res.status === 401) { localStorage.clear(); location.href = '/'; return; }
-  const data = await res.json();
-  if (!res.ok) throw new Error(data.error || 'Помилка запиту');
+  let res;
+  try {
+    res = await fetch(BASE + url, opts);
+  } catch {
+    throw new Error('Немає звʼязку з сервером. Перевірте інтернет і спробуйте ще раз.');
+  }
+  // 401 on the login form itself means "wrong password", not "session expired"
+  if (res.status === 401 && !url.startsWith('/auth/login')) { localStorage.clear(); location.href = '/'; return; }
+  let data = {};
+  try { data = await res.json(); } catch { /* non-JSON answer (e.g. proxy error page) */ }
+  if (!res.ok) throw new Error(data.error || `Помилка запиту (${res.status})`);
   return data;
 }
 

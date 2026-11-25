@@ -1,43 +1,91 @@
 const router = require('express').Router();
 const multer = require('multer');
+const os = require('os');
+const fs = require('fs');
 const { getDB } = require('../db/database');
 const { authMiddleware } = require('../middleware/auth');
 const { saveImage, removeImages, parseImages } = require('../lib/images');
 
-// Files are received in memory, then resized/compressed to JPEG before touching the disk.
+const MAX_PHOTOS = 20;           // per object
+const MAX_FILE_MB = 15;          // per uploaded file
+
+// Uploads go to the OS temp dir (not into memory, not onto the volume), then each file is
+// resized/compressed to JPEG into the uploads folder and the temp copy is deleted.
 const upload = multer({
-  storage: multer.memoryStorage(),
-  limits: { fileSize: 15 * 1024 * 1024, files: 10 },
+  dest: os.tmpdir(),
+  limits: { fileSize: MAX_FILE_MB * 1024 * 1024, files: MAX_PHOTOS },
 });
 
-// multer + compression in one step: after this, req.savedImages holds stored file names.
+function dropTemp(files) {
+  (files || []).forEach(f => { try { fs.unlinkSync(f.path); } catch {} });
+}
+
+// multer + compression in one step: after this, req.savedImages holds stored file names
+// (in the same order the files were sent).
 function uploadImages(req, res, next) {
-  upload.array('images', 10)(req, res, async (err) => {
+  upload.array('images', MAX_PHOTOS)(req, res, async (err) => {
     if (err) {
-      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'Файл завеликий (максимум 15 МБ)' : 'Помилка завантаження файлів';
+      dropTemp(req.files);
+      const msg = err.code === 'LIMIT_FILE_SIZE' ? `Файл завеликий (максимум ${MAX_FILE_MB} МБ)`
+                : err.code === 'LIMIT_UNEXPECTED_FILE' ? `Максимум ${MAX_PHOTOS} фото`
+                : 'Помилка завантаження файлів';
       return res.status(400).json({ error: msg });
     }
     req.savedImages = [];
     try {
-      for (const f of req.files || []) req.savedImages.push(await saveImage(f.buffer));
+      for (const f of req.files || []) req.savedImages.push(await saveImage(f.path));
       next();
     } catch (e) {
       removeImages(req.savedImages);
       console.error('[UPLOAD]', e?.code || '', e?.message || String(e));
       if (e?.code === 'ENOSPC')
         return res.status(507).json({ error: 'На сервері закінчилось місце для фото' });
-      res.status(400).json({ error: 'Не вдалося обробити фото. Перевірте, що це зображення.' });
+      res.status(400).json({ error: 'Не вдалося обробити фото. Перевірте, що це зображення (JPG, PNG, WebP).' });
+    } finally {
+      dropTemp(req.files);
     }
   });
 }
 
+// Final photo list of an object, in the order chosen on the form.
+// `order` is a JSON array: existing file names, or "#<n>" for the n-th newly uploaded file.
+// Without `order` the old behaviour is kept: kept photos first, then the new ones.
+function resolveImages(oldImages, keepRaw, orderRaw, saved) {
+  let order = null;
+  if (orderRaw) { try { const a = JSON.parse(orderRaw); if (Array.isArray(a)) order = a; } catch {} }
+  const final = [];
+  if (order) {
+    for (const t of order) {
+      if (typeof t !== 'string') continue;
+      if (t.startsWith('#')) { const f = saved[+t.slice(1)]; if (f && !final.includes(f)) final.push(f); }
+      else if (oldImages.includes(t) && !final.includes(t)) final.push(t);
+    }
+    saved.forEach(f => { if (!final.includes(f)) final.push(f); });      // never leave an upload orphaned
+  } else {
+    const wanted = keepRaw ? (Array.isArray(keepRaw) ? keepRaw : [keepRaw]) : [];
+    final.push(...wanted.filter(i => oldImages.includes(i)), ...saved);
+  }
+  return final;
+}
+
+// Common field validation. Returns an error message or null.
+function validate(b) {
+  if (!b.type || !b.title || !String(b.title).trim() || b.price === undefined || b.price === '')
+    return 'Тип, назва та ціна обовʼязкові';
+  if (!['apartment', 'house', 'land'].includes(b.type)) return 'Невірний тип об\'єкта';
+  if (!Number.isFinite(+b.price) || +b.price < 0) return 'Невірна ціна';
+  if (b.area && (!Number.isFinite(+b.area) || +b.area < 0)) return 'Невірна площа';
+  if (b.status && !['available', 'sold', 'reserved'].includes(b.status)) return 'Невірний статус';
+  return null;
+}
+
 const SORT_MAP = {
-  date_desc:  'p.created_at DESC',
-  date_asc:   'p.created_at ASC',
-  price_asc:  'p.price ASC',
-  price_desc: 'p.price DESC',
-  area_asc:   'p.area ASC',
-  area_desc:  'p.area DESC',
+  date_desc:  'p.created_at DESC, p.id DESC',
+  date_asc:   'p.created_at ASC, p.id ASC',
+  price_asc:  'p.price ASC, p.id DESC',
+  price_desc: 'p.price DESC, p.id DESC',
+  area_asc:   'p.area ASC, p.id DESC',
+  area_desc:  'p.area DESC, p.id DESC',
 };
 
 // Stats — before /:id
@@ -59,7 +107,9 @@ router.get('/stats', authMiddleware, (req, res) => {
 
 // List
 router.get('/', authMiddleware, (req, res) => {
-  const { type, status, city, search, sort = 'date_desc', page = 1, limit = 12, house_type } = req.query;
+  const { type, status, city, search, sort = 'date_desc', house_type } = req.query;
+  const page  = Math.max(1, parseInt(req.query.page) || 1);
+  const limit = Math.min(2000, Math.max(1, parseInt(req.query.limit) || 12));
   const db = getDB();
   let where = 'WHERE 1=1';
   const p = [];
@@ -68,16 +118,16 @@ router.get('/', authMiddleware, (req, res) => {
   if (status)     { where += ' AND p.status=?';     p.push(status); }
   if (city)       { where += ' AND p.city LIKE ?';  p.push(`%${city}%`); }
   if (search) {
-    where += ' AND (p.title LIKE ? OR p.address LIKE ? OR p.city LIKE ?)';
-    p.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    where += ' AND (p.title LIKE ? OR p.address LIKE ? OR p.city LIKE ? OR p.district LIKE ? OR p.owner_phone LIKE ?)';
+    p.push(`%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`, `%${search}%`);
   }
   const orderBy = SORT_MAP[sort] || SORT_MAP.date_desc;
   const base = `FROM properties p LEFT JOIN users u ON p.created_by=u.id ${where}`;
   const total = db.prepare(`SELECT COUNT(*) c ${base}`).get(...p).c;
   const rows  = db.prepare(
     `SELECT p.*, u.name agent_name ${base} ORDER BY ${orderBy} LIMIT ? OFFSET ?`
-  ).all(...p, parseInt(limit), (parseInt(page) - 1) * parseInt(limit));
-  res.json({ properties: rows, total, page: +page, limit: +limit });
+  ).all(...p, limit, (page - 1) * limit);
+  res.json({ properties: rows, total, page, limit });
 });
 
 // Single
@@ -91,19 +141,21 @@ router.get('/:id', authMiddleware, (req, res) => {
 
 // Create
 router.post('/', authMiddleware, uploadImages, (req, res) => {
-  const { type, title, description, price, area, address, city, district, rooms, floors, floor, status, owner_phone, house_type } = req.body;
-  if (!type || !title || !price) {
+  const { type, title, description, price, area, address, city, district, rooms, floors, floor, status, owner_phone, house_type, imageOrder } = req.body;
+  const bad = validate(req.body);
+  if (bad) { removeImages(req.savedImages); return res.status(400).json({ error: bad }); }
+  const finalImages = resolveImages([], null, imageOrder, req.savedImages);
+  if (finalImages.length > MAX_PHOTOS) {
     removeImages(req.savedImages);
-    return res.status(400).json({ error: 'Тип, назва та ціна обовʼязкові' });
+    return res.status(400).json({ error: `Максимум ${MAX_PHOTOS} фото на об'єкт` });
   }
-  const images = JSON.stringify(req.savedImages);
   try {
     const r = getDB().prepare(`
       INSERT INTO properties (type,title,description,price,area,address,city,district,rooms,floors,floor,status,images,owner_phone,house_type,created_by)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-    `).run(type, title, description, +price, area ? +area : null, address, city, district,
+    `).run(type, String(title).trim(), description, +price, area ? +area : null, address, city, district,
            rooms ? +rooms : null, floors ? +floors : null, floor ? +floor : null,
-           status || 'available', images, owner_phone || null, house_type || null, req.user.id);
+           status || 'available', JSON.stringify(finalImages), owner_phone || null, house_type || null, req.user.id);
     res.json({ id: r.lastInsertRowid, message: "Об'єкт створено" });
   } catch (e) {
     removeImages(req.savedImages);
@@ -120,20 +172,24 @@ router.put('/:id', authMiddleware, uploadImages, (req, res) => {
     removeImages(req.savedImages);
     return res.status(404).json({ error: "Об'єкт не знайдено" });
   }
+  const bad = validate(req.body);
+  if (bad) { removeImages(req.savedImages); return res.status(400).json({ error: bad }); }
 
-  const { type, title, description, price, area, address, city, district, rooms, floors, floor, status, keepImages, owner_phone, house_type } = req.body;
+  const { type, title, description, price, area, address, city, district, rooms, floors, floor, status, keepImages, owner_phone, house_type, imageOrder } = req.body;
   const oldImages = parseImages(existing.images);
-  const wanted = keepImages ? (Array.isArray(keepImages) ? keepImages : [keepImages]) : [];
-  const kept = oldImages.filter(i => wanted.includes(i));   // can only keep this object's own photos
-  const removed = oldImages.filter(i => !kept.includes(i));
-  const images = JSON.stringify([...kept, ...req.savedImages]);
+  const finalImages = resolveImages(oldImages, keepImages, imageOrder, req.savedImages);   // only this object's own photos
+  if (finalImages.length > MAX_PHOTOS) {
+    removeImages(req.savedImages);
+    return res.status(400).json({ error: `Максимум ${MAX_PHOTOS} фото на об'єкт` });
+  }
+  const removed = oldImages.filter(i => !finalImages.includes(i));
   try {
     db.prepare(`
       UPDATE properties SET type=?,title=?,description=?,price=?,area=?,address=?,city=?,district=?,
       rooms=?,floors=?,floor=?,status=?,images=?,owner_phone=?,house_type=?,updated_at=datetime('now') WHERE id=?
-    `).run(type, title, description, +price, area ? +area : null, address, city, district,
+    `).run(type, String(title).trim(), description, +price, area ? +area : null, address, city, district,
            rooms ? +rooms : null, floors ? +floors : null, floor ? +floor : null,
-           status, images, owner_phone || null, house_type || null, req.params.id);
+           status || 'available', JSON.stringify(finalImages), owner_phone || null, house_type || null, req.params.id);
     removeImages(removed);                                   // free disk space for dropped photos
     res.json({ message: "Об'єкт оновлено" });
   } catch (e) {

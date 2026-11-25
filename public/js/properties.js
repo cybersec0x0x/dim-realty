@@ -2,167 +2,220 @@ requireAuth();
 renderSidebarUser();
 initSidebar();
 
-const params      = new URLSearchParams(location.search);
+const $ = id => document.getElementById(id);
+const ICONS = { apartment: 'fa-building', house: 'fa-home', land: 'fa-tree' };
+const HOUSE_TYPE_LABELS = { private: 'Приватний будинок', duplex: 'Дюплекс', townhouse: 'Таунхаус', part: 'Частина будинку' };
+const PAGE_TITLES = { apartment: 'Квартири', house: 'Будинки', land: 'Ділянки' };
+const PAGE_SIZE = 12;
+
 let currentPage   = 1;
 let currentView   = localStorage.getItem('prop_view') || 'grid';
-let lastData      = [];   // cache for CSV export
+let currentStatus = '';
+let lastData      = [];     // objects on the current page
+let lastTotal     = 0;
 let deleteId      = null;
-let detailPropId  = null;
+let detailProp    = null;
 let debounceTimer;
+let loadSeq       = 0;      // ignore answers of outdated requests
+let galImgs = [], galIdx = 0;
 
-// Pre-fill filters from URL
-const typeParam = params.get('type') || '';
-if (typeParam) {
-  document.getElementById('f-type').value = typeParam;
-  const titles = { apartment: 'Квартири', house: 'Будинки', land: 'Ділянки' };
-  document.getElementById('page-title').textContent = titles[typeParam] || "Всі об'єкти";
-  if (typeParam === 'house') document.getElementById('f-house-type').style.display = '';
+// ── Filters ⇄ URL ────────────────────────────────────────────────────────────
+function readUrl() {
+  const p = new URLSearchParams(location.search);
+  $('f-type').value       = p.get('type') || '';
+  $('f-house-type').value = p.get('house_type') || '';
+  $('f-city').value       = p.get('city') || '';
+  $('f-search').value     = p.get('search') || '';
+  $('f-sort').value       = p.get('sort') || 'date_desc';
+  currentStatus           = p.get('status') || '';
+  currentPage             = Math.max(1, parseInt(p.get('page')) || 1);
+  syncFilterUi();
 }
 
-setView(currentView, false);
-loadProperties();
-
-// ── View toggle ─────────────────────────────────────────────────────────────
-function setView(v, save = true) {
-  currentView = v;
-  if (save) localStorage.setItem('prop_view', v);
-  const gBtn = document.getElementById('view-grid');
-  const lBtn = document.getElementById('view-list');
-  gBtn.style.cssText = v === 'grid' ? 'background:var(--primary);color:#fff;border-color:var(--primary)' : '';
-  lBtn.style.cssText = v === 'list' ? 'background:var(--primary);color:#fff;border-color:var(--primary)' : '';
+function filterParams() {
+  const p = new URLSearchParams();
+  const v = id => $(id).value.trim();
+  if (v('f-type'))       p.set('type', v('f-type'));
+  if (v('f-house-type') && v('f-type') === 'house') p.set('house_type', v('f-house-type'));
+  if (currentStatus)     p.set('status', currentStatus);
+  if (v('f-city'))       p.set('city', v('f-city'));
+  if (v('f-search'))     p.set('search', v('f-search'));
+  if (v('f-sort') && v('f-sort') !== 'date_desc') p.set('sort', v('f-sort'));
+  return p;
 }
 
-// ── Filters ──────────────────────────────────────────────────────────────────
-function applyFilters() { currentPage = 1; loadProperties(); }
-function debounceFilter() {
-  clearTimeout(debounceTimer);
-  debounceTimer = setTimeout(applyFilters, 400);
+function hasFilters() {
+  const p = filterParams(); p.delete('sort');
+  return [...p.keys()].length > 0;
 }
+
+function syncFilterUi() {
+  const type = $('f-type').value;
+  $('f-house-type').style.display = type === 'house' ? '' : 'none';
+  $('page-title').textContent = PAGE_TITLES[type] || "Всі об'єкти";
+  document.title = `Dim Realty — ${PAGE_TITLES[type] || "Об'єкти"}`;
+  document.querySelectorAll('#f-status-seg button').forEach(b => b.classList.toggle('active', b.dataset.status === currentStatus));
+  $('reset-btn').style.display = hasFilters() ? '' : 'none';
+}
+
+function writeUrl() {
+  const p = filterParams();
+  if (currentPage > 1) p.set('page', currentPage);
+  const qs = p.toString();
+  history.replaceState(null, '', location.pathname + (qs ? '?' + qs : ''));
+}
+
+function applyFilters() { currentPage = 1; syncFilterUi(); loadProperties(); }
+function debounceFilter() { clearTimeout(debounceTimer); debounceTimer = setTimeout(applyFilters, 350); }
 
 function onTypeFilterChange() {
-  const type = document.getElementById('f-type').value;
-  const houseFilter = document.getElementById('f-house-type');
-  if (type === 'house') {
-    houseFilter.style.display = '';
-  } else {
-    houseFilter.style.display = 'none';
-    houseFilter.value = '';
-  }
+  if ($('f-type').value !== 'house') $('f-house-type').value = '';
   applyFilters();
 }
 
-function buildQuery() {
-  const p = new URLSearchParams();
-  const type      = document.getElementById('f-type').value;
-  const houseType = document.getElementById('f-house-type').value;
-  const status    = document.getElementById('f-status').value;
-  const city      = document.getElementById('f-city').value.trim();
-  const search    = document.getElementById('f-search').value.trim();
-  const sort      = document.getElementById('f-sort').value;
-  if (type)      p.set('type', type);
-  if (houseType) p.set('house_type', houseType);
-  if (status)    p.set('status', status);
-  if (city)      p.set('city', city);
-  if (search)    p.set('search', search);
-  if (sort)      p.set('sort', sort);
-  p.set('page', currentPage);
-  p.set('limit', 12);
-  return p.toString();
+function resetFilters() {
+  ['f-type', 'f-house-type', 'f-city', 'f-search'].forEach(id => $(id).value = '');
+  $('f-sort').value = 'date_desc';
+  currentStatus = '';
+  applyFilters();
 }
 
-// ── Render ────────────────────────────────────────────────────────────────────
-const ICONS = { apartment: 'fa-building', house: 'fa-home', land: 'fa-tree' };
-const HOUSE_TYPE_LABELS = { private: 'Приватний будинок', duplex: 'Дюплекс', townhouse: 'Таунхаус', part: 'Частина будинку' };
+$('f-status-seg').addEventListener('click', e => {
+  const b = e.target.closest('button[data-status]');
+  if (!b) return;
+  currentStatus = b.dataset.status;
+  applyFilters();
+});
 
-function propImg(p, size = 190) {
-  const imgs = JSON.parse(p.images || '[]');
-  if (imgs.length) return `<img src="/uploads/${imgs[0]}" alt="${p.title}" style="width:100%;height:${size}px;object-fit:cover">`;
-  return `<div style="height:${size}px;display:flex;align-items:center;justify-content:center">
-    <i class="fas ${ICONS[p.type] || 'fa-home'}" style="font-size:52px;color:rgba(255,255,255,.2)"></i>
-  </div>`;
+// ── View toggle ──────────────────────────────────────────────────────────────
+function setView(v, rerender = true) {
+  currentView = v;
+  localStorage.setItem('prop_view', v);
+  $('view-grid').classList.toggle('active', v === 'grid');
+  $('view-list').classList.toggle('active', v === 'list');
+  if (rerender && lastData.length) renderCurrent();
+}
+
+// ── Render ───────────────────────────────────────────────────────────────────
+function fmtAreaShort(p) {
+  if (!p.area) return '';
+  if (p.type === 'land') return `${p.area} м² · ${Math.round(p.area / 100)} сот.`;
+  return `${p.area} м²`;
+}
+
+function metaChips(p) {
+  const chips = [];
+  if (p.area)       chips.push(['fa-ruler-combined', fmtAreaShort(p)]);
+  if (p.rooms)      chips.push(['fa-door-open', `${p.rooms} кімн.`]);
+  if (p.floor)      chips.push(['fa-layer-group', `${p.floor}/${p.floors || '?'} пов.`]);
+  else if (p.floors) chips.push(['fa-layer-group', `${p.floors} пов.`]);
+  if (p.house_type) chips.push(['fa-tag', HOUSE_TYPE_LABELS[p.house_type] || p.house_type]);
+  return chips.map(([i, t]) => `<span class="prop-meta-item"><i class="fas ${i}"></i>${esc(t)}</span>`).join('');
+}
+
+function cardHTML(p) {
+  const imgs = parseImages(p.images);
+  const place = [p.city, p.address].filter(Boolean).join(', ');
+  const cover = imgs.length
+    ? `<img src="${photoUrl(imgs[0])}" alt="" loading="lazy" onerror="this.remove()">`
+    : `<i class="fas ${ICONS[p.type] || 'fa-home'} prop-img-placeholder"></i>`;
+  return `<article class="prop-card">
+    <div class="prop-img" onclick="openDetail(${p.id})">
+      ${cover}
+      <div class="prop-badges">${typeBadge(p.type)} ${statusBadge(p.status)}</div>
+      <div class="prop-price-on-img">${esc(fmtPrice(p.price))}</div>
+      ${imgs.length > 1 ? `<span class="prop-photo-count"><i class="fas fa-images"></i>${imgs.length}</span>` : ''}
+    </div>
+    <div class="prop-body">
+      <div class="prop-title" title="${esc(p.title)}" style="cursor:pointer" onclick="openDetail(${p.id})">${esc(p.title)}</div>
+      <div class="prop-meta">${metaChips(p)}</div>
+      ${place ? `<div class="prop-address"><i class="fas fa-map-marker-alt"></i><span>${esc(place)}</span></div>` : ''}
+      <div class="prop-actions">
+        <button class="btn btn-outline btn-sm" style="flex:1" onclick="openDetail(${p.id})"><i class="fas fa-eye"></i> Деталі</button>
+        <a href="property-form.html?id=${p.id}" class="btn btn-outline btn-sm btn-icon" title="Редагувати"><i class="fas fa-edit"></i></a>
+        <button class="btn btn-danger btn-sm btn-icon" onclick="openDelete(${p.id})" title="Видалити"><i class="fas fa-trash"></i></button>
+      </div>
+    </div>
+  </article>`;
 }
 
 function renderGrid(props) {
-  return `<div class="properties-grid">${props.map(p => {
-    const rooms  = p.rooms  ? `<div class="prop-meta-item"><i class="fas fa-door-open"></i> ${p.rooms} кімн.</div>` : '';
-    const floor  = p.floor  ? `<div class="prop-meta-item"><i class="fas fa-layer-group"></i> ${p.floor}/${p.floors||'?'} пов.</div>` : '';
-    const floors = (!p.floor && p.floors) ? `<div class="prop-meta-item"><i class="fas fa-layer-group"></i> ${p.floors} пов.</div>` : '';
-    const htype  = p.house_type ? `<div class="prop-meta-item"><i class="fas fa-tag"></i> ${HOUSE_TYPE_LABELS[p.house_type]||p.house_type}</div>` : '';
-    return `<div class="prop-card">
-      <div class="prop-img" style="cursor:pointer" onclick="openDetail(${p.id})">
-        ${propImg(p)}
-        <div class="prop-badges">${typeBadge(p.type)} ${statusBadge(p.status)}</div>
-        <div style="position:absolute;bottom:8px;right:8px">
-          <button class="btn btn-outline btn-sm" style="background:rgba(0,0,0,.45);color:#fff;border-color:rgba(255,255,255,.3);font-size:11px" onclick="event.stopPropagation();openDetail(${p.id})">
-            <i class="fas fa-eye"></i> Деталі
-          </button>
-        </div>
-      </div>
-      <div class="prop-body">
-        <div class="prop-price">${fmtPrice(p.price)}</div>
-        <div class="prop-title" title="${p.title}">${p.title}</div>
-        <div class="prop-meta">
-          ${p.area ? `<div class="prop-meta-item"><i class="fas fa-ruler-combined"></i> ${fmtArea(p.area, p.type)}</div>` : ''}
-          ${rooms}${floor}${floors}${htype}
-        </div>
-        ${p.city || p.address ? `<div class="prop-address"><i class="fas fa-map-marker-alt"></i> ${[p.city, p.address].filter(Boolean).join(', ')}</div>` : ''}
-        <div class="prop-actions">
-          <a href="property-form.html?id=${p.id}" class="btn btn-outline btn-sm" style="flex:1;justify-content:center"><i class="fas fa-edit"></i> Редагувати</a>
-          <button class="btn btn-danger btn-sm btn-icon" onclick="openDelete(${p.id})" title="Видалити"><i class="fas fa-trash"></i></button>
-        </div>
-      </div>
-    </div>`;
-  }).join('')}</div>`;
+  return `<div class="properties-grid">${props.map(cardHTML).join('')}</div>`;
 }
 
 function renderList(props) {
   return `<div class="table-card"><div class="table-wrap"><table>
-    <thead><tr><th>Назва</th><th>Тип</th><th>Ціна</th><th>Площа</th><th>Місто</th><th>Статус</th><th>Агент</th><th>Дата</th><th>Дії</th></tr></thead>
-    <tbody>${props.map(p => `<tr>
-      <td style="cursor:pointer;font-weight:600;color:var(--primary)" onclick="openDetail(${p.id})">${p.title}</td>
+    <thead><tr><th>Об'єкт</th><th>Тип</th><th>Ціна</th><th>Площа</th><th>Місто</th><th>Статус</th><th>Агент</th><th>Дата</th><th></th></tr></thead>
+    <tbody>${props.map(p => {
+      const imgs = parseImages(p.images);
+      const thumb = imgs.length
+        ? `<img class="row-thumb" src="${photoUrl(imgs[0])}" alt="" loading="lazy">`
+        : `<div class="row-thumb-ph"><i class="fas ${ICONS[p.type] || 'fa-home'}"></i></div>`;
+      return `<tr>
+      <td><div class="row-title" onclick="openDetail(${p.id})">${thumb}<span>${esc(p.title)}</span></div></td>
       <td>${typeBadge(p.type)}</td>
-      <td style="font-weight:700;color:var(--primary);white-space:nowrap">${fmtPrice(p.price)}</td>
-      <td>${fmtArea(p.area, p.type)}</td>
-      <td>${p.city || '—'}</td>
+      <td style="font-weight:700;color:var(--primary);white-space:nowrap">${esc(fmtPrice(p.price))}</td>
+      <td style="white-space:nowrap">${esc(fmtAreaShort(p)) || '—'}</td>
+      <td>${esc(p.city) || '—'}</td>
       <td>${statusBadge(p.status)}</td>
-      <td>${p.agent_name || '—'}</td>
+      <td>${esc(p.agent_name) || '—'}</td>
       <td style="white-space:nowrap;font-size:12px;color:var(--muted)">${fmtDate(p.created_at)}</td>
       <td><div class="actions-cell">
         <button class="btn btn-outline btn-sm btn-icon" onclick="openDetail(${p.id})" title="Деталі"><i class="fas fa-eye"></i></button>
         <a href="property-form.html?id=${p.id}" class="btn btn-outline btn-sm btn-icon" title="Редагувати"><i class="fas fa-edit"></i></a>
         <button class="btn btn-danger btn-sm btn-icon" onclick="openDelete(${p.id})" title="Видалити"><i class="fas fa-trash"></i></button>
       </div></td>
-    </tr>`).join('')}</tbody>
+    </tr>`;
+    }).join('')}</tbody>
   </table></div></div>`;
 }
 
-// ── Load ──────────────────────────────────────────────────────────────────────
+function renderCurrent() {
+  $('properties-container').innerHTML = currentView === 'grid' ? renderGrid(lastData) : renderList(lastData);
+}
+
+function skeleton() {
+  if (currentView === 'list') return `<div class="table-card"><div class="skeleton" style="height:320px;border-radius:16px"></div></div>`;
+  return `<div class="properties-grid">${Array.from({ length: 6 }, () =>
+    `<div class="prop-card"><div class="skeleton" style="aspect-ratio:16/10;border-radius:0"></div><div class="prop-body"><div class="skeleton" style="height:18px;width:70%;margin-bottom:12px"></div><div class="skeleton" style="height:14px;width:45%;margin-bottom:12px"></div><div class="skeleton" style="height:34px"></div></div></div>`).join('')}</div>`;
+}
+
+// ── Load ─────────────────────────────────────────────────────────────────────
 async function loadProperties() {
-  const container  = document.getElementById('properties-container');
-  const pagination = document.getElementById('pagination');
-  container.innerHTML  = '<div class="loading-wrap"><div class="spinner"></div></div>';
-  pagination.innerHTML = '';
+  const seq = ++loadSeq;
+  const container = $('properties-container');
+  $('pagination').innerHTML = '';
+  container.innerHTML = skeleton();
+  const q = filterParams();
+  q.set('page', currentPage);
+  q.set('limit', PAGE_SIZE);
   try {
-    const data = await api.get('/properties?' + buildQuery());
+    const data = await api.get('/properties?' + q.toString());
+    if (seq !== loadSeq) return;
     const { properties, total, page, limit } = data;
-    lastData = properties;
-    document.getElementById('total-count').textContent = `Знайдено: ${total}`;
+    const pages = Math.max(1, Math.ceil(total / limit));
+    if (total > 0 && page > pages) { currentPage = pages; return loadProperties(); }   // e.g. deleted the last item of the last page
+    lastData = properties; lastTotal = total;
+    writeUrl();
+    $('total-count').innerHTML = `Знайдено: <b>${total}</b>`;
     if (!properties.length) {
-      container.innerHTML = `<div class="empty-state"><i class="fas fa-search"></i><h3>Об'єктів не знайдено</h3><p>Спробуйте змінити фільтри пошуку</p></div>`;
+      container.innerHTML = hasFilters()
+        ? `<div class="empty-state"><i class="fas fa-search"></i><h3>Нічого не знайдено</h3><p>Спробуйте змінити або скинути фільтри</p><button class="btn btn-outline" onclick="resetFilters()"><i class="fas fa-times"></i> Скинути фільтри</button></div>`
+        : `<div class="empty-state"><i class="fas fa-home"></i><h3>Ще немає жодного об'єкта</h3><p>Додайте перший об'єкт нерухомості</p><a href="property-form.html" class="btn btn-gold"><i class="fas fa-plus"></i> Додати об'єкт</a></div>`;
       return;
     }
-    container.innerHTML = currentView === 'grid' ? renderGrid(properties) : renderList(properties);
+    renderCurrent();
     renderPagination(total, page, limit);
   } catch (e) {
-    container.innerHTML = `<div class="empty-state"><i class="fas fa-exclamation-circle"></i><h3>Помилка завантаження</h3><p>${e.message}</p></div>`;
+    if (seq !== loadSeq) return;
+    container.innerHTML = `<div class="empty-state"><i class="fas fa-exclamation-circle"></i><h3>Помилка завантаження</h3><p>${esc(e.message)}</p><button class="btn btn-outline" onclick="loadProperties()"><i class="fas fa-redo"></i> Спробувати ще раз</button></div>`;
   }
 }
 
 function renderPagination(total, page, limit) {
   const pages = Math.ceil(total / limit);
   if (pages <= 1) return;
-  const el = document.getElementById('pagination');
-  let html = `<button class="page-btn" onclick="goPage(${page - 1})" ${page <= 1 ? 'disabled' : ''}><i class="fas fa-chevron-left"></i></button>`;
+  let html = `<button class="page-btn" onclick="goPage(${page - 1})" ${page <= 1 ? 'disabled' : ''} aria-label="Назад"><i class="fas fa-chevron-left"></i></button>`;
   for (let i = 1; i <= pages; i++) {
     if (i === 1 || i === pages || (i >= page - 2 && i <= page + 2)) {
       html += `<button class="page-btn ${i === page ? 'active' : ''}" onclick="goPage(${i})">${i}</button>`;
@@ -170,205 +223,198 @@ function renderPagination(total, page, limit) {
       html += `<span style="padding:0 4px;color:var(--muted)">…</span>`;
     }
   }
-  html += `<button class="page-btn" onclick="goPage(${page + 1})" ${page >= pages ? 'disabled' : ''}><i class="fas fa-chevron-right"></i></button>`;
-  el.innerHTML = html;
+  html += `<button class="page-btn" onclick="goPage(${page + 1})" ${page >= pages ? 'disabled' : ''} aria-label="Далі"><i class="fas fa-chevron-right"></i></button>`;
+  $('pagination').innerHTML = html;
 }
 
-function goPage(p) { currentPage = p; loadProperties(); window.scrollTo(0, 0); }
+function goPage(p) { currentPage = p; loadProperties(); window.scrollTo({ top: 0, behavior: 'smooth' }); }
 
-// ── Detail modal ──────────────────────────────────────────────────────────────
+// ── Detail modal ─────────────────────────────────────────────────────────────
+function closeDetail() { $('detail-modal').classList.remove('open'); }
+
 async function openDetail(id) {
-  detailPropId = id;
-  document.getElementById('detail-modal').classList.add('open');
-  document.getElementById('detail-gallery').innerHTML = '<div class="spinner" style="margin:auto"></div>';
-  document.getElementById('detail-badges').innerHTML  = '';
-  document.getElementById('detail-specs').innerHTML   = '';
-  document.getElementById('detail-price').textContent = '';
-  document.getElementById('detail-name').textContent  = '';
-  document.getElementById('detail-desc').textContent  = '';
+  $('detail-modal').classList.add('open');
+  detailProp = null;
+  $('detail-gallery').innerHTML = `<div class="gallery-stage"><div class="spinner" style="margin:auto"></div></div>`;
+  ['detail-badges', 'detail-specs', 'detail-price', 'detail-ppm', 'detail-name', 'detail-desc', 'detail-meta'].forEach(k => $(k).innerHTML = '');
+  $('detail-address').style.display = 'none';
+  $('detail-title').textContent = 'Завантаження…';
 
   try {
     const p = await api.get('/properties/' + id);
-    const imgs = JSON.parse(p.images || '[]');
-    fullscreenPhotos = imgs;
-    fullscreenPhotoIndex = 0;
+    detailProp = p;
+    const imgs = parseImages(p.images);
+    renderGallery(p, imgs);
 
-    // Gallery
-    const gallery = document.getElementById('detail-gallery');
-    if (imgs.length) {
-      let current = 0;
-      const render = () => {
-        gallery.innerHTML = `
-          <img src="/uploads/${imgs[current]}" style="width:100%;height:220px;object-fit:cover;display:block" alt="">
-          ${imgs.length > 1 ? `
-            <button onclick="event.stopPropagation();gal(${id},-1)" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer">‹</button>
-            <button onclick="event.stopPropagation();gal(${id},1)"  style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer">›</button>
-            <div style="position:absolute;bottom:8px;right:12px;background:rgba(0,0,0,.5);color:#fff;font-size:11px;padding:3px 8px;border-radius:20px">${current+1}/${imgs.length}</div>
-          ` : ''}`;
-      };
-      gallery._imgs    = imgs;
-      gallery._current = 0;
-      window._galCurrent = 0;
-      window.gal = (pid, dir) => {
-        if (pid !== id) return;
-        window._galCurrent = (window._galCurrent + dir + imgs.length) % imgs.length;
-        gallery.innerHTML = `
-          <img src="/uploads/${imgs[window._galCurrent]}" style="width:100%;height:220px;object-fit:cover;display:block" alt="">
-          ${imgs.length > 1 ? `
-            <button onclick="event.stopPropagation();gal(${id},-1)" style="position:absolute;left:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer">‹</button>
-            <button onclick="event.stopPropagation();gal(${id},1)"  style="position:absolute;right:10px;top:50%;transform:translateY(-50%);background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:50%;width:34px;height:34px;font-size:16px;cursor:pointer">›</button>
-            <div style="position:absolute;bottom:8px;right:12px;background:rgba(0,0,0,.5);color:#fff;font-size:11px;padding:3px 8px;border-radius:20px">${window._galCurrent+1}/${imgs.length}</div>
-          ` : ''}`;
-      };
-      render();
-    } else {
-      const icon = { apartment: 'fa-building', house: 'fa-home', land: 'fa-tree' }[p.type] || 'fa-home';
-      gallery.innerHTML = `<i class="fas ${icon}" style="font-size:64px;color:rgba(255,255,255,.2)"></i>`;
-    }
+    $('detail-title').textContent = p.title;
+    $('detail-badges').innerHTML = typeBadge(p.type) + ' ' + statusBadge(p.status);
+    $('detail-price').textContent = fmtPrice(p.price);
+    $('detail-ppm').textContent = p.area && p.price && p.type !== 'land' ? `≈ ${fmtPrice(p.price / p.area)} за м²` : '';
+    $('detail-name').textContent = p.title;
 
-    // Badges & info
-    document.getElementById('detail-badges').innerHTML = typeBadge(p.type) + ' ' + statusBadge(p.status);
-    document.getElementById('detail-price').textContent = fmtPrice(p.price);
-    document.getElementById('detail-name').textContent  = p.title;
-    document.getElementById('detail-title').textContent = p.title;
-
-    // Specs grid
     const specs = [];
-    if (p.house_type) specs.push([HOUSE_TYPE_LABELS[p.house_type]||p.house_type, '', 'fa-tag', true]);
-    if (p.area)   specs.push(['Площа',      fmtArea(p.area, p.type),        'fa-ruler-combined']);
-    if (p.rooms)  specs.push(['Кімнат',      p.rooms,                'fa-door-open']);
-    if (p.floor)  specs.push(['Поверх',      `${p.floor}/${p.floors||'?'}`, 'fa-layer-group']);
-    else if (p.floors) specs.push(['Поверховість', p.floors,         'fa-layer-group']);
-    if (p.city)   specs.push(['Місто',        p.city,               'fa-city']);
-    if (p.district) specs.push(['Район',      p.district,           'fa-map']);
-    if (p.owner_phone) specs.push(['Власник',  p.owner_phone,        'fa-phone']);
+    if (p.house_type)  specs.push(['Вид', HOUSE_TYPE_LABELS[p.house_type] || p.house_type, 'fa-tag']);
+    if (p.area)        specs.push(['Площа', fmtArea(p.area, p.type), 'fa-ruler-combined']);
+    if (p.rooms)       specs.push(['Кімнат', p.rooms, 'fa-door-open']);
+    if (p.floor)       specs.push(['Поверх', `${p.floor}/${p.floors || '?'}`, 'fa-layer-group']);
+    else if (p.floors) specs.push(['Поверховість', p.floors, 'fa-layer-group']);
+    if (p.city)        specs.push(['Місто', p.city, 'fa-city']);
+    if (p.district)    specs.push(['Район', p.district, 'fa-map']);
+    if (p.owner_phone) {
+      const tel = String(p.owner_phone).replace(/[^\d+]/g, '');
+      specs.push(['Власник', `<a href="tel:${esc(tel)}">${esc(p.owner_phone)}</a>`, 'fa-phone', true]);
+    }
+    $('detail-specs').innerHTML = specs.map(([k, v, icon, raw]) =>
+      `<div class="spec"><i class="fas ${icon}"></i><div><div class="k">${k}</div><div class="v">${raw ? v : esc(v)}</div></div></div>`).join('');
 
-    document.getElementById('detail-specs').innerHTML = specs.map(([label, val, icon, badge]) => `
-      <div style="background:var(--bg);border-radius:8px;padding:12px;display:flex;align-items:center;gap:10px">
-        <i class="fas ${icon}" style="color:var(--gold);font-size:16px;width:18px;text-align:center"></i>
-        <div>${badge
-          ? `<div style="font-weight:600;font-size:13px;color:var(--gold)">${label}</div>`
-          : `<div style="font-size:11px;color:var(--muted)">${label}</div><div style="font-weight:600;font-size:14px">${val}</div>`
-        }</div>
-      </div>`).join('');
-
-    if (p.address || p.city) {
-      document.getElementById('detail-address').innerHTML =
-        `<i class="fas fa-map-marker-alt" style="color:var(--gold)"></i> ${[p.address, p.city, p.district].filter(Boolean).join(', ')}`;
+    const place = [p.address, p.city, p.district].filter(Boolean).join(', ');
+    if (place) {
+      $('detail-address').style.display = '';
+      $('detail-address').innerHTML = `<i class="fas fa-map-marker-alt"></i><span>${esc(place)} <a href="https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(place)}" target="_blank" rel="noopener noreferrer"><i class="fas fa-external-link-alt"></i> На карті</a></span>`;
     }
 
-    document.getElementById('detail-desc').textContent = p.description || '';
+    $('detail-desc').textContent = p.description || '';
+    $('detail-meta').innerHTML = `Агент: <strong>${esc(p.agent_name) || '—'}</strong> · Додано: <strong>${fmtDate(p.created_at)}</strong>`;
 
-    document.getElementById('detail-meta').innerHTML =
-      `Агент: <strong>${p.agent_name || '—'}</strong> &nbsp;·&nbsp; Додано: <strong>${fmtDate(p.created_at)}</strong>`;
-
-    // Status selector
-    const sel = document.getElementById('detail-status-sel');
-    sel.innerHTML = `
-      <option value="available" ${p.status==='available'?'selected':''}>✅ Доступний</option>
-      <option value="reserved"  ${p.status==='reserved' ?'selected':''}>⏳ Зарезервовано</option>
-      <option value="sold"      ${p.status==='sold'     ?'selected':''}>🔴 Продано</option>`;
-
-    document.getElementById('detail-edit-btn').href = `property-form.html?id=${p.id}`;
+    $('detail-status-sel').innerHTML = [['available', '✅ Доступний'], ['reserved', '⏳ Зарезервовано'], ['sold', '🔴 Продано']]
+      .map(([v, t]) => `<option value="${v}" ${p.status === v ? 'selected' : ''}>${t}</option>`).join('');
+    $('detail-edit-btn').href = `property-form.html?id=${p.id}`;
   } catch (e) {
-    document.getElementById('detail-gallery').innerHTML =
-      `<div style="color:rgba(255,255,255,.5);padding:20px">${e.message}</div>`;
+    $('detail-title').textContent = 'Помилка';
+    $('detail-gallery').innerHTML = `<div class="gallery-stage" style="cursor:default"><div style="color:rgba(255,255,255,.6);padding:24px;text-align:center">${esc(e.message)}</div></div>`;
   }
 }
 
+// Photo gallery inside the detail window: big photo, thumbnails, arrows, swipe. Click opens the full-screen viewer.
+function renderGallery(p, imgs) {
+  const g = $('detail-gallery');
+  galImgs = imgs; galIdx = 0;
+  if (!imgs.length) {
+    g.innerHTML = `<div class="gallery-stage" style="cursor:default"><i class="fas ${ICONS[p.type] || 'fa-home'} ph"></i></div>`;
+    return;
+  }
+  const multi = imgs.length > 1;
+  g.innerHTML = `
+    <div class="gallery-stage" id="gal-stage">
+      <img id="gal-img" alt="">
+      ${multi ? `<button class="gal-btn prev" type="button" aria-label="Попереднє"><i class="fas fa-chevron-left"></i></button>
+                 <button class="gal-btn next" type="button" aria-label="Наступне"><i class="fas fa-chevron-right"></i></button>` : ''}
+      <span class="gal-counter" id="gal-counter"></span>
+      <button class="gal-expand" type="button"><i class="fas fa-expand"></i> На весь екран</button>
+    </div>
+    ${multi ? `<div class="gallery-thumbs" id="gal-thumbs">${imgs.map((n, k) =>
+      `<button type="button" data-k="${k}" aria-label="Фото ${k + 1}"><img src="${photoUrl(n)}" alt="" loading="lazy"></button>`).join('')}</div>` : ''}`;
+
+  const stage = $('gal-stage');
+  const openViewer = () => Lightbox.open(galImgs.map(photoUrl), galIdx, p.title);
+  stage.addEventListener('click', e => {
+    if (e.target.closest('.gal-btn')) return;
+    openViewer();
+  });
+  stage.querySelector('.prev')?.addEventListener('click', () => setGal(galIdx - 1));
+  stage.querySelector('.next')?.addEventListener('click', () => setGal(galIdx + 1));
+  $('gal-thumbs')?.addEventListener('click', e => { const b = e.target.closest('button[data-k]'); if (b) setGal(+b.dataset.k); });
+
+  let tx = null;
+  stage.addEventListener('touchstart', e => { tx = e.touches[0].clientX; }, { passive: true });
+  stage.addEventListener('touchend', e => {
+    if (tx === null) return;
+    const dx = e.changedTouches[0].clientX - tx; tx = null;
+    if (Math.abs(dx) > 50) setGal(galIdx + (dx < 0 ? 1 : -1));
+  }, { passive: true });
+
+  setGal(0);
+}
+
+function setGal(i) {
+  if (!galImgs.length) return;
+  galIdx = (i + galImgs.length) % galImgs.length;
+  const img = $('gal-img');
+  if (img) img.src = photoUrl(galImgs[galIdx]);
+  const c = $('gal-counter');
+  if (c) c.textContent = `${galIdx + 1} / ${galImgs.length}`;
+  document.querySelectorAll('#gal-thumbs button').forEach((b, k) => b.classList.toggle('active', k === galIdx));
+  $('gal-thumbs')?.querySelector('button.active')?.scrollIntoView({ block: 'nearest', inline: 'center' });
+}
+
+// ← → switch photos while the detail window is open (but not while typing or while the full-screen viewer is open)
+document.addEventListener('keydown', e => {
+  if (!$('detail-modal').classList.contains('open') || Lightbox.isOpen()) return;
+  if (['INPUT', 'SELECT', 'TEXTAREA'].includes(e.target.tagName)) return;
+  if (e.key === 'ArrowLeft')  setGal(galIdx - 1);
+  if (e.key === 'ArrowRight') setGal(galIdx + 1);
+});
+
 async function quickStatus() {
-  const status = document.getElementById('detail-status-sel').value;
+  if (!detailProp) return;
+  const status = $('detail-status-sel').value;
   try {
-    await api.patch('/properties/' + detailPropId + '/status', { status });
+    await api.patch('/properties/' + detailProp.id + '/status', { status });
+    detailProp.status = status;
+    $('detail-badges').innerHTML = typeBadge(detailProp.type) + ' ' + statusBadge(status);
     toast('Статус оновлено', 'success');
     loadProperties();
   } catch (e) { toast(e.message, 'error'); }
 }
 
-// ── Delete ────────────────────────────────────────────────────────────────────
+// ── Delete ───────────────────────────────────────────────────────────────────
 function openDelete(id) {
   deleteId = id;
-  document.getElementById('delete-modal').classList.add('open');
+  const item = lastData.find(p => p.id === id) || (detailProp && detailProp.id === id ? detailProp : null);
+  $('delete-name').textContent = item ? `«${item.title}»` : 'цей об\'єкт';
+  $('delete-modal').classList.add('open');
 }
 function closeDeleteModal() {
-  document.getElementById('delete-modal').classList.remove('open');
+  $('delete-modal').classList.remove('open');
   deleteId = null;
 }
 
-document.getElementById('confirm-delete-btn').onclick = async () => {
+$('confirm-delete-btn').onclick = async () => {
   if (!deleteId) return;
+  const btn = $('confirm-delete-btn');
+  btn.disabled = true;
   try {
     await api.del('/properties/' + deleteId);
     closeDeleteModal();
-    document.getElementById('detail-modal').classList.remove('open');
-    toast("Об'єкт успішно видалено", 'success');
+    closeDetail();
+    toast("Об'єкт видалено", 'success');
     loadProperties();
   } catch (e) { toast(e.message, 'error'); }
+  finally { btn.disabled = false; }
 };
 
-// ── CSV export ────────────────────────────────────────────────────────────────
-function exportCSV() {
-  if (!lastData.length) { toast('Немає даних для експорту', 'warning'); return; }
-  const headers = ['ID','Тип','Назва','Ціна','Площа','Місто','Район','Адреса','Статус','Кімнат','Поверх','Поверховість','Агент','Дата'];
-  const rows = lastData.map(p => [
-    p.id,
-    TYPE_LABELS[p.type]   || p.type,
-    `"${(p.title||'').replace(/"/g,'""')}"`,
-    p.price,
-    p.area || '',
-    p.city || '',
-    p.district || '',
-    `"${(p.address||'').replace(/"/g,'""')}"`,
-    STATUS_LABELS[p.status] || p.status,
-    p.rooms || '',
-    p.floor || '',
-    p.floors || '',
-    p.agent_name || '',
-    fmtDate(p.created_at),
-  ].join(','));
-
-  const csv  = '﻿' + [headers.join(','), ...rows].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
-  const url  = URL.createObjectURL(blob);
-  const a    = Object.assign(document.createElement('a'), { href: url, download: `dim-realty-${Date.now()}.csv` });
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  URL.revokeObjectURL(url);
-  toast('CSV-файл завантажено', 'success');
+// ── CSV export (all objects that match the current filters, not just this page) ──
+function csvCell(v) {
+  let s = String(v ?? '');
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;                 // keep spreadsheets from running text as formulas
+  return `"${s.replace(/"/g, '""')}"`;
 }
 
-// ── Fullscreen photo gallery ──────────────────────────────────────────────────
-let fullscreenPhotos = [];
-let fullscreenPhotoIndex = 0;
-
-function openFullscreenPhoto() {
-  if (!fullscreenPhotos.length) return;
-  document.getElementById('fullscreen-photo-modal').classList.add('open');
-  showFullscreenPhoto();
+async function exportCSV() {
+  if (!lastTotal) { toast('Немає даних для експорту', 'warning'); return; }
+  try {
+    const q = filterParams();
+    q.set('page', 1); q.set('limit', 2000);
+    const { properties } = await api.get('/properties?' + q.toString());
+    const headers = ['ID', 'Тип', 'Назва', 'Ціна (USD)', 'Площа (м²)', 'Місто', 'Район', 'Адреса', 'Статус', 'Кімнат', 'Поверх', 'Поверховість', 'Агент', 'Дата'];
+    const rows = properties.map(p => [
+      p.id, TYPE_LABELS[p.type] || p.type, p.title, p.price, p.area || '', p.city || '', p.district || '',
+      p.address || '', STATUS_LABELS[p.status] || p.status, p.rooms || '', p.floor || '', p.floors || '',
+      p.agent_name || '', fmtDate(p.created_at),
+    ].map(csvCell).join(';'));
+    const csv  = '﻿' + [headers.map(csvCell).join(';'), ...rows].join('\r\n');   // ; separator + BOM: opens correctly in Excel (UA/RU locale)
+    const url  = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8;' }));
+    const a    = Object.assign(document.createElement('a'), { href: url, download: `dim-realty-${new Date().toISOString().slice(0, 10)}.csv` });
+    document.body.appendChild(a); a.click(); a.remove();
+    URL.revokeObjectURL(url);
+    toast(`CSV завантажено (${properties.length} об'єктів)`, 'success');
+  } catch (e) { toast(e.message, 'error'); }
 }
 
-function closeFullscreenPhoto() {
-  document.getElementById('fullscreen-photo-modal').classList.remove('open');
-}
-
-function showFullscreenPhoto() {
-  const img = document.getElementById('fullscreen-photo-img');
-  const counter = document.getElementById('fullscreen-photo-counter');
-  img.src = `/uploads/${fullscreenPhotos[fullscreenPhotoIndex]}`;
-  counter.textContent = `${fullscreenPhotoIndex + 1} / ${fullscreenPhotos.length}`;
-  
-  // Show/hide nav buttons
-  document.getElementById('fullscreen-photo-prev').style.display = fullscreenPhotos.length > 1 ? 'block' : 'none';
-  document.getElementById('fullscreen-photo-next').style.display = fullscreenPhotos.length > 1 ? 'block' : 'none';
-}
-
-function prevFullscreenPhoto() {
-  fullscreenPhotoIndex = (fullscreenPhotoIndex - 1 + fullscreenPhotos.length) % fullscreenPhotos.length;
-  showFullscreenPhoto();
-}
-
-function nextFullscreenPhoto() {
-  fullscreenPhotoIndex = (fullscreenPhotoIndex + 1) % fullscreenPhotos.length;
-  showFullscreenPhoto();
-}
+// ── Start ────────────────────────────────────────────────────────────────────
+// Deep link from the dashboard: properties.html?open=ID (read before the URL gets rewritten)
+const openId = parseInt(new URLSearchParams(location.search).get('open')) || 0;
+readUrl();
+setView(currentView, false);
+loadProperties();
+if (openId) openDetail(openId);

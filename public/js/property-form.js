@@ -2,87 +2,80 @@ requireAuth();
 renderSidebarUser();
 initSidebar();
 
+const $ = id => document.getElementById(id);
 const pid = new URLSearchParams(location.search).get('id');
 const isEdit = !!pid;
-let existingImages = [];
-let newFiles = [];
+const MAX_PHOTOS = 20;
+const MAX_FILE_MB = 15;
+
+// All photos of the object in display order. The first one is the main photo.
+//   { kind: 'old', name }            — already stored on the server
+//   { kind: 'new', file, url }       — chosen now, uploaded on save (url = local preview)
+let photos = [];
+let dirty = false;
+let saving = false;
 
 if (isEdit) {
-  document.getElementById('form-title').textContent = 'Редагування об\'єкта';
-  document.getElementById('submit-btn').innerHTML = '<i class="fas fa-save"></i> Зберегти зміни';
+  $('form-title').textContent = "Редагування об'єкта";
+  $('submit-btn').innerHTML = '<i class="fas fa-save"></i> Зберегти зміни';
   loadProperty();
 }
+
+function markDirty() {
+  dirty = true;
+  $('dirty-hint').textContent = 'Є незбережені зміни';
+}
+$('property-form').addEventListener('input', markDirty);
+window.addEventListener('beforeunload', e => { if (dirty && !saving) { e.preventDefault(); e.returnValue = ''; } });
 
 async function loadProperty() {
   try {
     const p = await api.get('/properties/' + pid);
-    const form = document.getElementById('property-form');
-    form.querySelector('[name=type]').value = p.type;
-    form.querySelector('[name=status]').value = p.status;
-    form.querySelector('[name=title]').value = p.title || '';
-    form.querySelector('[name=price]').value = p.price || '';
-    form.querySelector('[name=area]').value = p.area || '';
-    form.querySelector('[name=city]').value = p.city || '';
-    form.querySelector('[name=district]').value = p.district || '';
-    form.querySelector('[name=address]').value = p.address || '';
-    form.querySelector('[name=description]').value = p.description || '';
-    if (p.owner_phone) { const el = form.querySelector('[name=owner_phone]'); if (el) el.value = p.owner_phone; }
+    const form = $('property-form');
+    const set = (name, val) => { const el = form.querySelector(`[name=${name}]`); if (el && val !== null && val !== undefined) el.value = val; };
+    set('type', p.type); set('status', p.status); set('title', p.title); set('price', p.price);
+    set('area', p.area); set('city', p.city); set('district', p.district); set('address', p.address);
+    set('description', p.description); set('owner_phone', p.owner_phone);
+    document.title = `Dim Realty — ${p.title}`;
     onTypeChange();
-    if (p.rooms)  setRooms(p.rooms);
-    if (p.floors) { const el = form.querySelector('[name=floors]'); if (el) el.value = p.floors; }
-    if (p.floor)  { const el = form.querySelector('[name=floor]');  if (el) el.value = p.floor;  }
-    if (p.house_type) { const el = form.querySelector('[name=house_type]'); if (el) el.value = p.house_type; }
-
-    existingImages = JSON.parse(p.images || '[]');
-    renderExistingImages();
-  } catch(e) {
+    if (p.rooms) setRooms(p.rooms);
+    set('floors', p.floors); set('floor', p.floor); set('house_type', p.house_type);
+    photos = parseImages(p.images).map(name => ({ kind: 'old', name }));
+    renderPhotos();
+    dirty = false; $('dirty-hint').textContent = '';
+  } catch (e) {
     toast('Помилка завантаження: ' + e.message, 'error');
   }
 }
 
-function renderExistingImages() {
-  const container = document.getElementById('existing-images');
-  if (!existingImages.length) { container.innerHTML = ''; return; }
-  container.innerHTML = `<div style="margin-top:12px;font-size:12px;color:var(--muted);margin-bottom:8px">Збережені фото:</div>
-    <div class="img-previews">${existingImages.map(img => `
-      <div class="img-preview-item">
-        <img src="/uploads/${img}" alt="">
-        <button class="img-remove" onclick="removeExisting('${img}')" type="button">×</button>
-      </div>`).join('')}</div>`;
-}
-
-function removeExisting(img) {
-  existingImages = existingImages.filter(i => i !== img);
-  renderExistingImages();
+// ── Type-specific fields ─────────────────────────────────────────────────────
+function roomButtons(max) {
+  return Array.from({ length: max }, (_, i) => i + 1)
+    .map(n => `<button type="button" class="room-btn" data-val="${n}" onclick="setRooms(${n})">${n === max ? n + '+' : n}</button>`).join('');
 }
 
 function onTypeChange() {
-  const type = document.getElementById('prop-type').value;
-  const block = document.getElementById('details-block');
-  const fields = document.getElementById('details-fields');
-  if (!type || type === 'land') { block.style.display = 'none'; return; }
+  const type = $('prop-type').value;
+  const block = $('details-block');
+  const fields = $('details-fields');
+  updateAreaHint();
+  if (!type || type === 'land') { block.style.display = 'none'; fields.innerHTML = ''; return; }
   block.style.display = 'block';
 
   if (type === 'apartment') {
     fields.innerHTML = `
       <div class="form-group full">
         <label class="form-label">Кількість кімнат</label>
-        <div class="rooms-selector" id="rooms-selector">
-          <button type="button" class="room-btn" data-val="1" onclick="setRooms(1)">1</button>
-          <button type="button" class="room-btn" data-val="2" onclick="setRooms(2)">2</button>
-          <button type="button" class="room-btn" data-val="3" onclick="setRooms(3)">3</button>
-          <button type="button" class="room-btn" data-val="4" onclick="setRooms(4)">4</button>
-          <button type="button" class="room-btn" data-val="5" onclick="setRooms(5)">5+</button>
-        </div>
+        <div class="rooms-selector" id="rooms-selector">${roomButtons(5)}</div>
         <input type="hidden" name="rooms" id="rooms-val">
       </div>
       <div class="form-group">
         <label class="form-label">Поверх</label>
-        <input class="form-control" name="floor" type="number" min="1" placeholder="5">
+        <input class="form-control" name="floor" type="number" min="1" inputmode="numeric" placeholder="5">
       </div>
       <div class="form-group">
         <label class="form-label">Поверховість будинку</label>
-        <input class="form-control" name="floors" type="number" min="1" placeholder="12">
+        <input class="form-control" name="floors" type="number" min="1" inputmode="numeric" placeholder="12">
       </div>`;
   } else if (type === 'house') {
     fields.innerHTML = `
@@ -98,90 +91,204 @@ function onTypeChange() {
       </div>
       <div class="form-group full">
         <label class="form-label">Кількість кімнат</label>
-        <div class="rooms-selector" id="rooms-selector">
-          <button type="button" class="room-btn" data-val="1" onclick="setRooms(1)">1</button>
-          <button type="button" class="room-btn" data-val="2" onclick="setRooms(2)">2</button>
-          <button type="button" class="room-btn" data-val="3" onclick="setRooms(3)">3</button>
-          <button type="button" class="room-btn" data-val="4" onclick="setRooms(4)">4</button>
-          <button type="button" class="room-btn" data-val="5" onclick="setRooms(5)">5+</button>
-          <button type="button" class="room-btn" data-val="6" onclick="setRooms(6)">6+</button>
-        </div>
+        <div class="rooms-selector" id="rooms-selector">${roomButtons(6)}</div>
         <input type="hidden" name="rooms" id="rooms-val">
       </div>
       <div class="form-group">
         <label class="form-label">Кількість поверхів</label>
-        <input class="form-control" name="floors" type="number" min="1" max="10" placeholder="2">
+        <input class="form-control" name="floors" type="number" min="1" max="10" inputmode="numeric" placeholder="2">
       </div>`;
   }
 }
 
 function setRooms(val) {
-  const hidden = document.getElementById('rooms-val');
+  const hidden = $('rooms-val');
   if (hidden) hidden.value = val;
-  document.querySelectorAll('.room-btn').forEach(btn => {
-    btn.classList.toggle('active', +btn.dataset.val === +val);
+  document.querySelectorAll('.room-btn').forEach(btn => btn.classList.toggle('active', +btn.dataset.val === +val));
+  markDirty();
+}
+
+// For land: show the area in sotky and hectares while typing
+function updateAreaHint() {
+  const type = $('prop-type').value;
+  const hint = $('area-hint');
+  const a = +$('prop-area').value;
+  if (type === 'land' && a > 0) {
+    hint.style.display = '';
+    hint.textContent = `= ${Math.round(a / 100 * 10) / 10} соток = ${(a / 10000).toFixed(2)} га`;
+  } else {
+    hint.style.display = 'none';
+  }
+}
+$('prop-area').addEventListener('input', updateAreaHint);
+
+// ── Photos ───────────────────────────────────────────────────────────────────
+const grid = $('photo-grid');
+const area = $('upload-area');
+const input = $('img-input');
+
+function srcOf(p) { return p.kind === 'old' ? photoUrl(p.name) : p.url; }
+
+function renderPhotos() {
+  const n = photos.length;
+  $('photo-toolbar').style.display = n ? 'flex' : 'none';
+  $('photo-hint').style.display = n ? '' : 'none';
+  $('photo-count').innerHTML = `<b>${n}</b> з ${MAX_PHOTOS} фото`;
+  grid.innerHTML = photos.map((p, i) => `
+    <div class="photo-tile${i === 0 ? ' main' : ''}" draggable="true" data-i="${i}" title="Переглянути на весь екран">
+      <img src="${esc(srcOf(p))}" alt="Фото ${i + 1}">
+      ${p.kind === 'new' ? '<span class="tile-new">нове</span>' : ''}
+      ${i === 0 ? '<span class="tile-ribbon"><i class="fas fa-star"></i> Головне</span>' : ''}
+      <div class="tile-actions">
+        ${i !== 0 ? '<button type="button" class="tile-btn" data-act="main" title="Зробити головним"><i class="fas fa-star"></i></button>' : ''}
+        <button type="button" class="tile-btn del" data-act="del" title="Видалити фото"><i class="fas fa-times"></i></button>
+      </div>
+    </div>`).join('');
+}
+
+function setMain(i) {
+  const [p] = photos.splice(i, 1);
+  photos.unshift(p);
+  markDirty(); renderPhotos();
+}
+
+function removePhoto(i) {
+  const [p] = photos.splice(i, 1);
+  if (p.kind === 'new') URL.revokeObjectURL(p.url);
+  markDirty(); renderPhotos();
+}
+
+grid.addEventListener('click', e => {
+  const tile = e.target.closest('.photo-tile');
+  if (!tile) return;
+  const i = +tile.dataset.i;
+  const act = e.target.closest('[data-act]')?.dataset.act;
+  if (act === 'main') return setMain(i);
+  if (act === 'del')  return removePhoto(i);
+  Lightbox.open(photos.map(srcOf), i, $('prop-title').value || '');
+});
+
+$('photo-clear').onclick = () => {
+  if (!photos.length) return;
+  photos.forEach(p => { if (p.kind === 'new') URL.revokeObjectURL(p.url); });
+  photos = [];
+  markDirty(); renderPhotos();
+};
+
+// Drag to reorder
+let dragFrom = null;
+grid.addEventListener('dragstart', e => {
+  const t = e.target.closest('.photo-tile'); if (!t) return;
+  dragFrom = +t.dataset.i;
+  t.classList.add('dragging');
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', String(dragFrom));      // required by Firefox
+});
+grid.addEventListener('dragover', e => {
+  if (dragFrom === null) return;                                // a file drag from the desktop is handled by the upload area
+  e.preventDefault();
+  grid.querySelectorAll('.over').forEach(x => x.classList.remove('over'));
+  e.target.closest('.photo-tile')?.classList.add('over');
+});
+grid.addEventListener('drop', e => {
+  if (dragFrom === null) return;
+  e.preventDefault();
+  const to = e.target.closest('.photo-tile');
+  const from = dragFrom; dragFrom = null;
+  if (!to) return renderPhotos();
+  const toI = +to.dataset.i;
+  if (toI !== from) {
+    const [p] = photos.splice(from, 1);
+    photos.splice(toI, 0, p);
+    markDirty();
+  }
+  renderPhotos();
+});
+grid.addEventListener('dragend', () => { dragFrom = null; renderPhotos(); });
+
+// Adding files: can be done several times, files are appended
+function addFiles(fileList) {
+  let skipped = 0, tooBig = 0, notImg = 0;
+  for (const f of Array.from(fileList)) {
+    if (!f.type.startsWith('image/')) { notImg++; continue; }
+    if (f.size > MAX_FILE_MB * 1024 * 1024) { tooBig++; continue; }
+    if (photos.some(p => p.kind === 'new' && p.file.name === f.name && p.file.size === f.size && p.file.lastModified === f.lastModified)) continue;   // same file twice
+    if (photos.length >= MAX_PHOTOS) { skipped++; continue; }
+    photos.push({ kind: 'new', file: f, url: URL.createObjectURL(f) });
+  }
+  if (notImg)  toast(`${notImg} файл(ів) пропущено: це не зображення`, 'warning');
+  if (tooBig)  toast(`${tooBig} фото пропущено: більше ${MAX_FILE_MB} МБ`, 'warning');
+  if (skipped) toast(`Максимум ${MAX_PHOTOS} фото на об'єкт — ${skipped} не додано`, 'warning');
+  markDirty(); renderPhotos();
+}
+
+area.addEventListener('click', () => input.click());
+area.addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); input.click(); } });
+input.addEventListener('change', () => { addFiles(input.files); input.value = ''; });          // reset so the same file can be picked again
+area.addEventListener('dragover', e => { if (dragFrom !== null) return; e.preventDefault(); area.classList.add('drag'); });
+area.addEventListener('dragleave', () => area.classList.remove('drag'));
+area.addEventListener('drop', e => { e.preventDefault(); area.classList.remove('drag'); if (e.dataTransfer.files.length) addFiles(e.dataTransfer.files); });
+// Dropping a file next to the zone must not make the browser navigate to it
+['dragover', 'drop'].forEach(ev => window.addEventListener(ev, e => { if (e.dataTransfer?.types?.includes('Files')) e.preventDefault(); }));
+
+// ── Save (XHR so a progress % can be shown for big uploads) ──────────────────
+function sendForm(method, url, fd, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open(method, '/api' + url);
+    xhr.setRequestHeader('Authorization', 'Bearer ' + localStorage.getItem('dr_token'));
+    xhr.upload.onprogress = e => { if (e.lengthComputable) onProgress(Math.round(e.loaded / e.total * 100)); };
+    xhr.onerror = () => reject(new Error('Немає звʼязку з сервером. Перевірте інтернет і спробуйте ще раз.'));
+    xhr.onload = () => {
+      if (xhr.status === 401) { localStorage.clear(); location.href = '/'; return; }
+      let data = {};
+      try { data = JSON.parse(xhr.responseText); } catch {}
+      if (xhr.status >= 200 && xhr.status < 300) resolve(data);
+      else reject(new Error(data.error || 'Помилка збереження'));
+    };
+    xhr.send(fd);
   });
 }
 
-function handleImages(input) {
-  newFiles = Array.from(input.files);
-  const preview = document.getElementById('img-previews');
-  preview.innerHTML = newFiles.map((f, i) => {
-    const url = URL.createObjectURL(f);
-    return `<div class="img-preview-item">
-      <img src="${url}" alt="">
-      <button class="img-remove" type="button" onclick="removeNew(${i})">×</button>
-    </div>`;
-  }).join('');
-}
-
-function removeNew(idx) {
-  newFiles.splice(idx, 1);
-  const dt = new DataTransfer();
-  newFiles.forEach(f => dt.items.add(f));
-  document.getElementById('img-input').files = dt.files;
-  handleImages(document.getElementById('img-input'));
-}
-
-// Drag & drop
-const area = document.getElementById('upload-area');
-area.addEventListener('dragover', e => { e.preventDefault(); area.style.borderColor = 'var(--primary)'; });
-area.addEventListener('dragleave', () => { area.style.borderColor = ''; });
-area.addEventListener('drop', e => {
-  e.preventDefault();
-  area.style.borderColor = '';
-  document.getElementById('img-input').files = e.dataTransfer.files;
-  handleImages(document.getElementById('img-input'));
-});
-
 async function submitForm(e) {
   e.preventDefault();
-  const btn = document.getElementById('submit-btn');
+  if (saving) return;
+  const btn = $('submit-btn');
+  const form = e.target;
+  const label = isEdit ? '<i class="fas fa-save"></i> Зберегти зміни' : '<i class="fas fa-save"></i> Зберегти об\'єкт';
+
+  if (!$('prop-type').value) { toast('Оберіть тип об\'єкта', 'warning'); $('prop-type').focus(); return; }
+
+  saving = true;
   btn.disabled = true;
   btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Збереження...';
 
-  const form = e.target;
   const fd = new FormData();
-  const fields = ['type','status','title','price','area','city','district','address','description','rooms','floors','floor','owner_phone','house_type'];
-  fields.forEach(f => { const el = form.querySelector(`[name=${f}]`); if (el && el.value) fd.append(f, el.value); });
+  ['type', 'status', 'title', 'price', 'area', 'city', 'district', 'address', 'description', 'rooms', 'floors', 'floor', 'owner_phone', 'house_type']
+    .forEach(f => { const el = form.querySelector(`[name=${f}]`); if (el && el.value) fd.append(f, el.value); });
 
-  // Existing images to keep
-  existingImages.forEach(img => fd.append('keepImages', img));
-  // New files
-  newFiles.forEach(f => fd.append('images', f));
+  // Photos in the chosen order: stored ones by name, new ones as "#<n>" (n-th uploaded file)
+  const order = []; let n = 0, uploads = 0;
+  photos.forEach(p => {
+    if (p.kind === 'old') order.push(p.name);
+    else { fd.append('images', p.file); order.push('#' + n++); uploads++; }
+  });
+  fd.append('imageOrder', JSON.stringify(order));
 
   try {
-    if (isEdit) {
-      await api.upd('/properties/' + pid, fd);
-      toast("Об'єкт успішно оновлено", 'success');
-    } else {
-      await api.upload('/properties', fd);
-      toast("Об'єкт успішно створено", 'success');
-    }
-    setTimeout(() => location.href = 'properties.html', 1000);
-  } catch(ex) {
+    const res = await sendForm(isEdit ? 'PUT' : 'POST', isEdit ? '/properties/' + pid : '/properties', fd, pct => {
+      if (uploads) btn.innerHTML = pct < 100
+        ? `<i class="fas fa-spinner fa-spin"></i> Завантаження фото… ${pct}%`
+        : '<i class="fas fa-spinner fa-spin"></i> Обробка фото…';
+    });
+    dirty = false;
+    toast(isEdit ? "Об'єкт оновлено" : "Об'єкт створено", 'success');
+    const id = isEdit ? pid : res.id;
+    setTimeout(() => location.href = id ? `properties.html?open=${id}` : 'properties.html', 700);   // open the saved object so the photos can be checked right away
+  } catch (ex) {
+    saving = false;
     toast(ex.message, 'error');
     btn.disabled = false;
-    btn.innerHTML = isEdit ? '<i class="fas fa-save"></i> Зберегти зміни' : '<i class="fas fa-save"></i> Зберегти об\'єкт';
+    btn.innerHTML = label;
   }
 }

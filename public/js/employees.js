@@ -13,7 +13,7 @@ async function loadEmployees() {
     renderTable(allEmployees);
   } catch(e) {
     document.getElementById('employees-tbody').innerHTML =
-      `<tr><td colspan="6"><div class="no-results">${e.message}</div></td></tr>`;
+      `<tr><td colspan="6"><div class="no-results">${esc(e.message)}</div></td></tr>`;
   }
 }
 
@@ -36,18 +36,18 @@ function renderTable(emps) {
   tbody.innerHTML = emps.map(u => {
     const isMe = user && user.id === u.id;
     const canEdit = user && user.role === 'admin';
-    return `<tr>
+    return `<tr${u.is_active ? '' : ' style="opacity:.6"'}>
       <td>
         <div class="employee-name">
-          <div class="avatar">${u.name.charAt(0).toUpperCase()}</div>
+          <div class="avatar">${esc(u.name.charAt(0).toUpperCase())}</div>
           <div class="emp-details">
-            <div class="name">${u.name}${isMe ? ' <span style="color:var(--muted);font-size:11px">(Ви)</span>' : ''}</div>
-            <div class="email">${u.email}</div>
+            <div class="name">${esc(u.name)}${isMe ? ' <span style="color:var(--muted);font-size:11px">(Ви)</span>' : ''}</div>
+            <div class="email">${esc(u.email)}</div>
           </div>
         </div>
       </td>
-      <td><span class="badge badge-${u.role}">${ROLE_LABELS[u.role] || u.role}</span></td>
-      <td>${u.phone || '<span class="text-muted">—</span>'}</td>
+      <td><span class="badge badge-${esc(u.role)}">${esc(ROLE_LABELS[u.role] || u.role)}</span></td>
+      <td>${u.phone ? esc(u.phone) : '<span class="text-muted">—</span>'}</td>
       <td>
         <span class="badge ${u.is_active ? 'badge-active' : 'badge-inactive'}">
           ${u.is_active ? 'Активний' : 'Деактивовано'}
@@ -60,7 +60,7 @@ function renderTable(emps) {
           <button class="btn btn-${u.is_active?'warning':'success'} btn-sm btn-icon" onclick="toggleActive(${u.id}, ${u.is_active})" title="${u.is_active?'Деактивувати':'Активувати'}" ${!canEdit?'disabled':''}>
             <i class="fas fa-${u.is_active?'ban':'check'}"></i>
           </button>
-          <button class="btn btn-danger btn-sm btn-icon" onclick="openDelete(${u.id})" title="Видалити" ${isMe||!canEdit?'disabled':''}><i class="fas fa-trash"></i></button>
+          <button class="btn btn-danger btn-sm btn-icon" onclick="openDelete(${u.id})" title="${isMe ? 'Не можна видалити себе' : 'Видалити'}" ${isMe||!canEdit?'disabled':''}><i class="fas fa-trash"></i></button>
         </div>
       </td>
     </tr>`;
@@ -140,6 +140,8 @@ async function toggleActive(id, current) {
 // Delete
 function openDelete(id) {
   deleteId = id;
+  const u = allEmployees.find(e => e.id === id);
+  document.getElementById('del-name').textContent = u ? `«${u.name}»` : 'цього співробітника';
   document.getElementById('del-modal').classList.add('open');
 }
 function closeDelModal() {
