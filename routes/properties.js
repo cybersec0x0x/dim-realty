@@ -1,20 +1,35 @@
 const router = require('express').Router();
 const multer = require('multer');
-const path = require('path');
-const fs = require('fs');
 const { getDB } = require('../db/database');
 const { authMiddleware } = require('../middleware/auth');
+const { saveImage, removeImages, parseImages } = require('../lib/images');
 
-const DATA_DIR   = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
-const uploadsDir = path.join(DATA_DIR, 'uploads');
-if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
-
-const storage = multer.diskStorage({
-  destination: (_, __, cb) => cb(null, uploadsDir),
-  filename: (_, file, cb) =>
-    cb(null, `${Date.now()}-${Math.random().toString(36).slice(2)}${path.extname(file.originalname)}`),
+// Files are received in memory, then resized/compressed to JPEG before touching the disk.
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 15 * 1024 * 1024, files: 10 },
 });
-const upload = multer({ storage, limits: { fileSize: 15 * 1024 * 1024 } });
+
+// multer + compression in one step: after this, req.savedImages holds stored file names.
+function uploadImages(req, res, next) {
+  upload.array('images', 10)(req, res, async (err) => {
+    if (err) {
+      const msg = err.code === 'LIMIT_FILE_SIZE' ? 'Файл завеликий (максимум 15 МБ)' : 'Помилка завантаження файлів';
+      return res.status(400).json({ error: msg });
+    }
+    req.savedImages = [];
+    try {
+      for (const f of req.files || []) req.savedImages.push(await saveImage(f.buffer));
+      next();
+    } catch (e) {
+      removeImages(req.savedImages);
+      console.error('[UPLOAD]', e?.code || '', e?.message || String(e));
+      if (e?.code === 'ENOSPC')
+        return res.status(507).json({ error: 'На сервері закінчилось місце для фото' });
+      res.status(400).json({ error: 'Не вдалося обробити фото. Перевірте, що це зображення.' });
+    }
+  });
+}
 
 const SORT_MAP = {
   date_desc:  'p.created_at DESC',
@@ -75,11 +90,13 @@ router.get('/:id', authMiddleware, (req, res) => {
 });
 
 // Create
-router.post('/', authMiddleware, upload.array('images', 10), (req, res) => {
+router.post('/', authMiddleware, uploadImages, (req, res) => {
   const { type, title, description, price, area, address, city, district, rooms, floors, floor, status, owner_phone, house_type } = req.body;
-  if (!type || !title || !price)
+  if (!type || !title || !price) {
+    removeImages(req.savedImages);
     return res.status(400).json({ error: 'Тип, назва та ціна обовʼязкові' });
-  const images = JSON.stringify(req.files?.map(f => f.filename) ?? []);
+  }
+  const images = JSON.stringify(req.savedImages);
   try {
     const r = getDB().prepare(`
       INSERT INTO properties (type,title,description,price,area,address,city,district,rooms,floors,floor,status,images,owner_phone,house_type,created_by)
@@ -89,21 +106,27 @@ router.post('/', authMiddleware, upload.array('images', 10), (req, res) => {
            status || 'available', images, owner_phone || null, house_type || null, req.user.id);
     res.json({ id: r.lastInsertRowid, message: "Об'єкт створено" });
   } catch (e) {
+    removeImages(req.savedImages);
     console.error('[CREATE]', e?.message || String(e));
     res.status(500).json({ error: 'Помилка при створенні' });
   }
 });
 
 // Update
-router.put('/:id', authMiddleware, upload.array('images', 10), (req, res) => {
+router.put('/:id', authMiddleware, uploadImages, (req, res) => {
   const db = getDB();
-  const existing = db.prepare('SELECT id FROM properties WHERE id=?').get(req.params.id);
-  if (!existing) return res.status(404).json({ error: "Об'єкт не знайдено" });
+  const existing = db.prepare('SELECT id, images FROM properties WHERE id=?').get(req.params.id);
+  if (!existing) {
+    removeImages(req.savedImages);
+    return res.status(404).json({ error: "Об'єкт не знайдено" });
+  }
 
   const { type, title, description, price, area, address, city, district, rooms, floors, floor, status, keepImages, owner_phone, house_type } = req.body;
-  const kept = keepImages ? (Array.isArray(keepImages) ? keepImages : [keepImages]) : [];
-  const newFiles = req.files?.map(f => f.filename) ?? [];
-  const images = JSON.stringify([...kept, ...newFiles]);
+  const oldImages = parseImages(existing.images);
+  const wanted = keepImages ? (Array.isArray(keepImages) ? keepImages : [keepImages]) : [];
+  const kept = oldImages.filter(i => wanted.includes(i));   // can only keep this object's own photos
+  const removed = oldImages.filter(i => !kept.includes(i));
+  const images = JSON.stringify([...kept, ...req.savedImages]);
   try {
     db.prepare(`
       UPDATE properties SET type=?,title=?,description=?,price=?,area=?,address=?,city=?,district=?,
@@ -111,8 +134,10 @@ router.put('/:id', authMiddleware, upload.array('images', 10), (req, res) => {
     `).run(type, title, description, +price, area ? +area : null, address, city, district,
            rooms ? +rooms : null, floors ? +floors : null, floor ? +floor : null,
            status, images, owner_phone || null, house_type || null, req.params.id);
+    removeImages(removed);                                   // free disk space for dropped photos
     res.json({ message: "Об'єкт оновлено" });
   } catch (e) {
+    removeImages(req.savedImages);
     console.error('[UPDATE]', e?.message || String(e));
     res.status(500).json({ error: 'Помилка при оновленні' });
   }
@@ -133,9 +158,10 @@ router.patch('/:id/status', authMiddleware, (req, res) => {
 // Delete — check existence first, do not rely on changes()
 router.delete('/:id', authMiddleware, (req, res) => {
   const db = getDB();
-  const existing = db.prepare('SELECT id FROM properties WHERE id=?').get(req.params.id);
+  const existing = db.prepare('SELECT id, images FROM properties WHERE id=?').get(req.params.id);
   if (!existing) return res.status(404).json({ error: "Об'єкт не знайдено" });
   db.prepare('DELETE FROM properties WHERE id=?').run(req.params.id);
+  removeImages(parseImages(existing.images));              // don't leave orphan files on the volume
   res.json({ message: "Об'єкт видалено" });
 });
 

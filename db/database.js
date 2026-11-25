@@ -4,9 +4,8 @@ const path = require('path');
 const fs = require('fs');
 
 // On Railway: mount a Volume at /app/data — DB and uploads both persist there.
-// Locally: falls back to  <project>/data/
-const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, '..', 'data');
-if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+// Locally: falls back to  <project>/data/   (see config.js)
+const { DATA_DIR } = require('../config');
 
 const DB_PATH = path.join(DATA_DIR, 'realty.db');
 let _wrapper = null;
@@ -55,9 +54,18 @@ class DB {
   exec(sql)    { this._db.exec(sql); this._save(); }
   prepare(sql) { return new Stmt(this._db, sql, this); }
   pragma(str)  { try { this._db.run(`PRAGMA ${str}`); } catch {} }
+  // Atomic save: write to a temp file, then rename over the real DB. If the disk is full the
+  // write fails on the temp file and the existing realty.db is left untouched (no truncation).
   _save() {
-    const data = this._db.export();
-    fs.writeFileSync(DB_PATH, Buffer.from(data));
+    const data = Buffer.from(this._db.export());
+    const tmp = DB_PATH + '.tmp';
+    try {
+      fs.writeFileSync(tmp, data);
+      fs.renameSync(tmp, DB_PATH);
+    } catch (e) {
+      try { fs.unlinkSync(tmp); } catch {}
+      throw e;
+    }
   }
 }
 
