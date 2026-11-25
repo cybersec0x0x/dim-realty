@@ -86,7 +86,11 @@ async function initDB() {
 
   _wrapper = new DB(rawDb);
 
-  _wrapper.exec(`
+  // Schema statements run on the in-memory DB only: "CREATE TABLE IF NOT EXISTS" changes nothing on an
+  // existing DB, so saving to disk here is pointless — and on a full volume it would crash-loop the app.
+  const isNewDb = !fs.existsSync(DB_PATH);
+
+  _wrapper._db.exec(`
     CREATE TABLE IF NOT EXISTS users (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       name       TEXT    NOT NULL,
@@ -100,7 +104,7 @@ async function initDB() {
     )
   `);
 
-  _wrapper.exec(`
+  _wrapper._db.exec(`
     CREATE TABLE IF NOT EXISTS properties (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       type        TEXT NOT NULL,
@@ -127,6 +131,8 @@ async function initDB() {
   // Migrate existing DB — add columns if missing (throws if already exist, that's fine)
   try { _wrapper._db.run('ALTER TABLE properties ADD COLUMN owner_phone TEXT'); _wrapper._save(); } catch {}
   try { _wrapper._db.run('ALTER TABLE properties ADD COLUMN house_type TEXT');  _wrapper._save(); } catch {}
+
+  if (isNewDb) _wrapper._save();
 
   // Only seed the admin account — no demo data
   const admin = _wrapper.prepare('SELECT id FROM users WHERE email=?').get('admin@dimrealty.ua');
